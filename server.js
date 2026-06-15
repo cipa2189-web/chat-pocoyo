@@ -241,7 +241,7 @@ const HTML_PAGE = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Chat</title>
+<title>Мессенджер Про</title>
 <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 <script src="/socket.io/socket.io.js"></script>
 <style>
@@ -403,26 +403,26 @@ html, body { margin:0; height:100%; background: var(--bg); color: var(--text); f
 <div id="app">
   <div id="authScreen" class="auth-screen">
     <div class="auth-card">
-      <div class="auth-title">Telegram Clone Pro</div>
+      <div class="auth-title">💬 Мессенджер Про</div>
       <div class="auth-tabs">
-        <button id="tabLogin" class="active">Login</button>
-        <button id="tabRegister">Register</button>
+        <button id="tabLogin" class="active">Вход</button>
+        <button id="tabRegister">Регистрация</button>
       </div>
       <form id="loginForm" class="auth-form">
-        <input id="loginUsername" placeholder="Username" required autocomplete="username">
-        <input id="loginPassword" type="password" placeholder="Password" required autocomplete="current-password">
-        <button type="submit" class="btn-primary">Sign In</button>
+        <input id="loginUsername" placeholder="Имя пользователя" required autocomplete="username">
+        <input id="loginPassword" type="password" placeholder="Пароль" required autocomplete="current-password">
+        <button type="submit" class="btn-primary">Войти</button>
       </form>
       <form id="registerForm" class="auth-form hidden">
-        <input id="regUsername" placeholder="Username" required autocomplete="off">
-        <input id="regPassword" type="password" placeholder="Password (min 4)" required autocomplete="new-password">
-        <input id="regAbout" placeholder="About (optional)" maxlength="140">
+        <input id="regUsername" placeholder="Имя пользователя" required autocomplete="off">
+        <input id="regPassword" type="password" placeholder="Пароль (мин. 4 символа)" required autocomplete="new-password">
+        <input id="regAbout" placeholder="О себе (необязательно)" maxlength="140">
         <div id="regDrop" class="drop-zone">
           <input type="file" id="regAvatar" accept="image/*" class="hidden">
           <img id="regAvatarPreview" class="avatar-preview" alt="">
-          <span id="regDropText">Click or drag avatar here</span>
+          <span id="regDropText">Нажмите или перетащите фото сюда</span>
         </div>
-        <button type="submit" class="btn-primary">Create Account</button>
+        <button type="submit" class="btn-primary">Создать аккаунт</button>
       </form>
     </div>
   </div>
@@ -430,19 +430,19 @@ html, body { margin:0; height:100%; background: var(--bg); color: var(--text); f
     <div id="chatContainer" class="chat-container">
       <aside class="sidebar">
         <div class="sidebar-header">
-          <div class="header-title">Telegram</div>
+          <div class="header-title">Чаты</div>
           <div style="display:flex;gap:6px">
-            <button id="newGroupBtn" class="icon-btn" title="New group">👥</button>
-            <button id="themeBtn" class="icon-btn" title="Theme">🎨</button>
-            <button id="profileBtn" class="icon-btn" title="Profile">☰</button>
+            <button id="newGroupBtn" class="icon-btn" title="Новая группа">👥</button>
+            <button id="themeBtn" class="icon-btn" title="Тема">🎨</button>
+            <button id="profileBtn" class="icon-btn" title="Профиль">☰</button>
           </div>
         </div>
         <div class="search-box">
-          <input id="searchUsers" placeholder="Search..." autocomplete="off">
+          <input id="searchUsers" placeholder="Поиск..." autocomplete="off">
         </div>
         <div class="tabs-bar">
-          <button id="tabChats" class="tab-btn active">Chats</button>
-          <button id="tabUsers" class="tab-btn">Users</button>
+          <button id="tabChats" class="tab-btn active">Чаты</button>
+          <button id="tabUsers" class="tab-btn">Пользователи</button>
         </div>
         <div id="chatsList" class="user-list"></div>
         <div id="usersList" class="user-list hidden"></div>
@@ -451,13 +451,13 @@ html, body { margin:0; height:100%; background: var(--bg); color: var(--text); f
         <div class="chat-header">
           <button id="backBtn" class="back-btn hidden">←</button>
           <div class="chat-header-info">
-            <div id="chatTitle" class="chat-title">Global Chat</div>
+            <div id="chatTitle" class="chat-title">Общий чат</div>
             <div id="chatSubtitle" class="chat-subtitle"></div>
           </div>
-          <button id="clearHistoryBtn" class="icon-btn hidden" title="Clear history">🗑</button>
+          <button id="clearHistoryBtn" class="icon-btn hidden" title="Очистить историю">🗑</button>
         </div>
         <div id="pinnedMessage" class="pinned-message hidden">
-          <span class="pinned-label">Pinned</span>
+          <span class="pinned-label">📌 Закреплено</span>
           <span id="pinnedText" class="pinned-text"></span>
           <button id="unpinBtn" class="icon-btn" style="font-size:14px;padding:2px">✕</button>
         </div>
@@ -465,10 +465,10 @@ html, body { margin:0; height:100%; background: var(--bg); color: var(--text); f
         <div id="messagesArea" class="messages-area"></div>
         <div id="replyBar" class="reply-bar hidden"><span id="replyBarText"></span><button id="cancelReply" class="icon-btn" style="font-size:14px;padding:2px">✕</button></div>
         <div id="inputArea" class="input-area">
-          <button id="attachBtn" class="attach-btn" title="Attach file">📎</button>
-          <button id="videoNoteBtn" class="attach-btn" title="Video circle">⏺</button>
-          <input id="messageInput" type="text" placeholder="Write a message..." maxlength="1000" autocomplete="off">
-          <button id="recordBtn" class="record-btn" title="Voice message">🎤</button>
+          <button id="attachBtn" class="attach-btn" title="Прикрепить файл">📎</button>
+          <button id="videoNoteBtn" class="attach-btn" title="Видеокружок">⏺</button>
+          <input id="messageInput" type="text" placeholder="Введите сообщение..." maxlength="1000" autocomplete="off">
+          <button id="recordBtn" class="record-btn" title="Голосовое сообщение">🎤</button>
           <button id="sendBtn" class="send-btn">➤</button>
         </div>
       </main>
@@ -478,40 +478,40 @@ html, body { margin:0; height:100%; background: var(--bg); color: var(--text); f
 <input type="file" id="fileInput" class="hidden">
 <div id="profileModal" class="modal hidden">
   <div class="modal-content">
-    <div class="modal-header"><span>Edit Profile</span><button class="modal-close" data-modal="profileModal">×</button></div>
+    <div class="modal-header"><span>Профиль</span><button class="modal-close" data-modal="profileModal">×</button></div>
     <div class="modal-body">
       <div id="profileDrop" class="drop-zone small">
         <input type="file" id="profileAvatar" accept="image/*" class="hidden">
         <img id="profileAvatarPreview" class="avatar-preview" alt="">
-        <span id="profileDropText">Change avatar</span>
+        <span id="profileDropText">Сменить фото</span>
       </div>
       <div id="profileUsername" class="profile-name"></div>
-      <input id="profileAbout" placeholder="About" maxlength="140">
-      <button id="saveProfile" class="btn-primary">Save</button>
-      <button id="logoutBtn" class="btn-secondary">Logout</button>
+      <input id="profileAbout" placeholder="О себе" maxlength="140">
+      <button id="saveProfile" class="btn-primary">Сохранить</button>
+      <button id="logoutBtn" class="btn-secondary">Выйти</button>
     </div>
   </div>
 </div>
 <div id="themeModal" class="modal hidden">
   <div class="modal-content">
-    <div class="modal-header"><span>Choose Theme</span><button class="modal-close" data-modal="themeModal">×</button></div>
+    <div class="modal-header"><span>Выберите тему</span><button class="modal-close" data-modal="themeModal">×</button></div>
     <div class="modal-body"><div id="themeGrid" class="theme-grid"></div></div>
   </div>
 </div>
 <div id="groupModal" class="modal hidden">
   <div class="modal-content">
-    <div class="modal-header"><span>New Group</span><button class="modal-close" data-modal="groupModal">×</button></div>
+    <div class="modal-header"><span>Новая группа</span><button class="modal-close" data-modal="groupModal">×</button></div>
     <div class="modal-body">
-      <div class="group-form"><input id="groupName" placeholder="Group name" maxlength="40"></div>
+      <div class="group-form"><input id="groupName" placeholder="Название группы" maxlength="40"></div>
       <div id="groupMembers" class="member-select"></div>
-      <button id="createGroup" class="btn-primary">Create Group</button>
+      <button id="createGroup" class="btn-primary">Создать группу</button>
     </div>
   </div>
 </div>
 <div id="contextMenu" class="context-menu hidden"></div>
 <div id="reactionPicker" class="reaction-picker hidden"><span>👍</span><span>❤️</span><span>😂</span><span>😮</span><span>😢</span><span>🎉</span><span>🔥</span><span>👏</span></div>
 <div id="mediaPreview" class="media-preview hidden"><button>×</button></div>
-<div id="dragOverlay" class="drag-overlay hidden">Drop files here</div>
+<div id="dragOverlay" class="drag-overlay hidden">Перетащите файлы сюда</div>
 <div id="toast" class="toast hidden"></div>
 <script id="themes-data" type="application/json">${JSON.stringify(THEMES).replace(/</g, '\\u003c')}</script>
 <script>
@@ -526,7 +526,7 @@ function init() {
   checkMobile(); window.addEventListener('resize', checkMobile);
   socket.on('connect', () => { if (App.token) socket.emit('authenticate', {token: App.token}); });
   socket.on('logged_in', onLoggedIn);
-  socket.on('auth_error', () => { logout(); showToast('Session expired'); });
+  socket.on('auth_error', () => { logout(); showToast('Сессия истекла'); });
   socket.on('register_error', (m) => showToast(m));
   socket.on('login_error', (m) => showToast(m));
   socket.on('profile_error', (m) => showToast(m));
@@ -556,7 +556,7 @@ function bindAuthTabs() { q('tabLogin').addEventListener('click', () => switchTa
 function switchTab(tab) { if (tab === 'login') { q('loginForm').classList.remove('hidden'); q('registerForm').classList.add('hidden'); q('tabLogin').classList.add('active'); q('tabRegister').classList.remove('active'); } else { q('loginForm').classList.add('hidden'); q('registerForm').classList.remove('hidden'); q('tabLogin').classList.remove('active'); q('tabRegister').classList.add('active'); } }
 function bindForms() {
   setupDropZone('regDrop', 'regAvatar', 'regAvatarPreview', 'regDropText', (b64) => { App.selectedAvatar = b64; }, true);
-  q('registerForm').addEventListener('submit', (e) => { e.preventDefault(); const username = q('regUsername').value.trim().toLowerCase(); const password = q('regPassword').value; if (password.length < 4) return showToast('Password min 4 chars'); socket.emit('register', {username, password, avatarBase64: App.selectedAvatar, about: q('regAbout').value, theme: App.theme}); });
+  q('registerForm').addEventListener('submit', (e) => { e.preventDefault(); const username = q('regUsername').value.trim().toLowerCase(); const password = q('regPassword').value; if (password.length < 4) return showToast('Пароль минимум 4 символа'); socket.emit('register', {username, password, avatarBase64: App.selectedAvatar, about: q('regAbout').value, theme: App.theme}); });
   q('loginForm').addEventListener('submit', (e) => { e.preventDefault(); socket.emit('login', {username: q('loginUsername').value.trim().toLowerCase(), password: q('loginPassword').value}); });
 }
 function setupDropZone(zoneId, inputId, previewId, textId, callback, compress) {
@@ -566,7 +566,7 @@ function setupDropZone(zoneId, inputId, previewId, textId, callback, compress) {
   zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
   zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
   input.addEventListener('change', () => handleFiles(input.files));
-  function handleFiles(files) { if (!files || !files[0]) return; if (!files[0].type.startsWith('image/')) return showToast('Please select an image'); if (compress) compressImage(files[0], (dataUrl) => { preview.src = dataUrl; preview.style.display = 'block'; if (text) text.style.display = 'none'; callback(dataUrl); }); else { const r = new FileReader(); r.onload = (e) => { preview.src = e.target.result; preview.style.display = 'block'; if (text) text.style.display = 'none'; callback(e.target.result); }; r.readAsDataURL(files[0]); } }
+  function handleFiles(files) { if (!files || !files[0]) return; if (!files[0].type.startsWith('image/')) return showToast('Выберите изображение'); if (compress) compressImage(files[0], (dataUrl) => { preview.src = dataUrl; preview.style.display = 'block'; if (text) text.style.display = 'none'; callback(dataUrl); }); else { const r = new FileReader(); r.onload = (e) => { preview.src = e.target.result; preview.style.display = 'block'; if (text) text.style.display = 'none'; callback(e.target.result); }; r.readAsDataURL(files[0]); } }
 }
 function compressImage(file, callback, maxLen) {
   maxLen = maxLen || 64000;
@@ -600,19 +600,21 @@ function updateChatSubtitle() {
 }
 function formatLastSeen(ts) {
   const diff = Math.floor((Date.now() - ts) / 1000);
-  if (diff < 60) return 'last seen just now';
-  if (diff < 3600) return 'last seen ' + Math.floor(diff / 60) + ' minutes ago';
-  if (diff < 86400) return 'last seen ' + Math.floor(diff / 3600) + ' hours ago';
-  return 'last seen ' + Math.floor(diff / 86400) + ' days ago';
+  if (diff < 60) return 'был(а) только что';
+  if (diff < 3600) return 'был(а) ' + Math.floor(diff / 60) + ' мин. назад';
+  if (diff < 86400) return 'был(а) ' + Math.floor(diff / 3600) + ' ч. назад';
+  return 'был(а) ' + Math.floor(diff / 86400) + ' дн. назад';
 }
 
 function bindChatEvents() {
+  q('tabChats').addEventListener('click', () => switchTab('chats'));
+  q('tabUsers').addEventListener('click', () => switchTab('users'));
   q('sendBtn').addEventListener('click', sendMessage);
   q('messageInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendMessage(); } });
   q('messageInput').addEventListener('input', onTyping);
   q('searchUsers').addEventListener('input', renderChatList);
   q('backBtn').addEventListener('click', () => { q('chatContainer').classList.remove('mobile-open'); q('backBtn').classList.add('hidden'); });
-  q('clearHistoryBtn').addEventListener('click', () => { if (confirm('Clear global history?')) socket.emit('clear_history'); });
+  q('clearHistoryBtn').addEventListener('click', () => { if (confirm('Очистить историю общего чата?')) socket.emit('clear_history'); });
   q('attachBtn').addEventListener('click', () => q('fileInput').click());
   q('fileInput').addEventListener('change', () => handleFileUpload(q('fileInput').files[0]));
   q('videoNoteBtn').addEventListener('click', toggleVideoRecording);
@@ -701,7 +703,7 @@ function startPrivateChat(otherUserId) {
       openChat(chat.id);
       switchTab('chats');
     } else {
-      showToast('Failed to open chat');
+      showToast('Не удалось открыть чат');
     }
   });
 }
@@ -846,16 +848,16 @@ function setReplyTo(msg) { App.replyTo = msg; App.editId = null; q('replyBarText
 function setEditTo(msg) { App.editId = msg.id; App.replyTo = null; q('messageInput').value = msg.text || ''; q('replyBarText').textContent = 'Edit message'; q('replyBar').classList.remove('hidden'); q('messageInput').focus(); }
 
 function handleFileUpload(file) {
-  if (!file) return; if (file.size > 2.9 * 1024 * 1024) { showToast('File max 3MB'); return; }
+  if (!file) return; if (file.size > 2.9 * 1024 * 1024) { showToast('Файл слишком большой (макс. 3 МБ)'); return; }
   const reader = new FileReader();
   reader.onload = (e) => { const payload = { text: file.name, mediaType: file.type.startsWith('image/') ? 'image' : 'file', fileUrl: e.target.result, fileName: file.name, fileSize: file.size, mime: file.type }; sendMediaMessage(payload); };
   reader.readAsDataURL(file);
 }
 function sendMediaMessage(payload) { socket.emit('send_message', Object.assign({}, payload, {chatId: App.currentChatId, replyTo: App.replyTo ? { id: App.replyTo.id, senderName: App.replyTo.sender ? App.replyTo.sender.username : 'Unknown', text: previewText(App.replyTo) } : null})); App.replyTo = null; q('replyBar').classList.add('hidden'); }
 
-async function toggleVideoRecording() { const btn = q('videoNoteBtn'); if (App.videoRecorder && App.videoRecorder.state === 'recording') { stopVideoRecording(); return; } if (App.mediaRecorder && App.mediaRecorder.state === 'recording') { showToast('Audio recording in progress'); return; } try { const stream = await navigator.mediaDevices.getUserMedia({video: {width: 480, height: 480}, audio: true}); App.videoStream = stream; App.videoRecorder = new MediaRecorder(stream, {mimeType: 'video/webm;codecs=vp8,opus'}); App.videoChunks = []; App.recordingStart = Date.now(); App.videoRecorder.ondataavailable = (e) => { if (e.data.size > 0) App.videoChunks.push(e.data); }; App.videoRecorder.onstop = () => { processVideoRecording(); stream.getTracks().forEach((t) => t.stop()); }; App.videoRecorder.start(100); btn.classList.add('recording'); showVideoRecordingPanel(true, stream); } catch (e) { showToast('Camera access denied or unsupported'); console.error(e); } }
+async function toggleVideoRecording() { const btn = q('videoNoteBtn'); if (App.videoRecorder && App.videoRecorder.state === 'recording') { stopVideoRecording(); return; } if (App.mediaRecorder && App.mediaRecorder.state === 'recording') { showToast('Идёт запись голоса'); return; } try { const stream = await navigator.mediaDevices.getUserMedia({video: {width: 480, height: 480}, audio: true}); App.videoStream = stream; App.videoRecorder = new MediaRecorder(stream, {mimeType: 'video/webm;codecs=vp8,opus'}); App.videoChunks = []; App.recordingStart = Date.now(); App.videoRecorder.ondataavailable = (e) => { if (e.data.size > 0) App.videoChunks.push(e.data); }; App.videoRecorder.onstop = () => { processVideoRecording(); stream.getTracks().forEach((t) => t.stop()); }; App.videoRecorder.start(100); btn.classList.add('recording'); showVideoRecordingPanel(true, stream); } catch (e) { showToast('Камера недоступна'); console.error(e); } }
 function stopVideoRecording() { if (App.videoRecorder && App.videoRecorder.state === 'recording') App.videoRecorder.stop(); }
-async function processVideoRecording() { showToast('Processing video circle...'); let blob = new Blob(App.videoChunks, {type: 'video/webm'}); const maxSize = 2.9 * 1024 * 1024; if (blob.size > maxSize) { showToast('Compressing video...'); const sizes = [192, 128]; for (const sz of sizes) { blob = await compressVideoBlob(blob, sz, 12); if (blob.size <= maxSize) break; } if (blob.size > maxSize) { showToast('Video too large even after compression (max 3MB)'); q('videoNoteBtn').classList.remove('recording'); showVideoRecordingPanel(false); return; } } const url = URL.createObjectURL(blob); const video = document.createElement('video'); video.src = url; video.muted = true; video.playsInline = true; video.onloadedmetadata = () => { const canvas = document.createElement('canvas'); canvas.width = 320; canvas.height = 320; const ctx = canvas.getContext('2d'); const size = Math.min(video.videoWidth, video.videoHeight); const sx = (video.videoWidth - size) / 2, sy = (video.videoHeight - size) / 2; video.currentTime = 0; video.onseeked = () => { ctx.drawImage(video, sx, sy, size, size, 0, 0, 320, 320); const reader = new FileReader(); reader.onload = (e) => { sendMediaMessage({text: 'Video circle', mediaType: 'video_note', fileUrl: e.target.result, fileName: 'circle.webm', fileSize: blob.size, mime: 'video/webm', duration: Math.floor(video.duration || (Date.now() - App.recordingStart)/1000)}); URL.revokeObjectURL(url); q('videoNoteBtn').classList.remove('recording'); showVideoRecordingPanel(false); }; reader.readAsDataURL(blob); }; }; }
+async function processVideoRecording() { showToast('Обработка видеокружка...'); let blob = new Blob(App.videoChunks, {type: 'video/webm'}); const maxSize = 2.9 * 1024 * 1024; if (blob.size > maxSize) { showToast('Сжатие видео...'); const sizes = [192, 128]; for (const sz of sizes) { blob = await compressVideoBlob(blob, sz, 12); if (blob.size <= maxSize) break; } if (blob.size > maxSize) { showToast('Видео слишком большое (макс. 3 МБ)'); q('videoNoteBtn').classList.remove('recording'); showVideoRecordingPanel(false); return; } } const url = URL.createObjectURL(blob); const video = document.createElement('video'); video.src = url; video.muted = true; video.playsInline = true; video.onloadedmetadata = () => { const canvas = document.createElement('canvas'); canvas.width = 320; canvas.height = 320; const ctx = canvas.getContext('2d'); const size = Math.min(video.videoWidth, video.videoHeight); const sx = (video.videoWidth - size) / 2, sy = (video.videoHeight - size) / 2; video.currentTime = 0; video.onseeked = () => { ctx.drawImage(video, sx, sy, size, size, 0, 0, 320, 320); const reader = new FileReader(); reader.onload = (e) => { sendMediaMessage({text: 'Видеокружок', mediaType: 'video_note', fileUrl: e.target.result, fileName: 'circle.webm', fileSize: blob.size, mime: 'video/webm', duration: Math.floor(video.duration || (Date.now() - App.recordingStart)/1000)}); URL.revokeObjectURL(url); q('videoNoteBtn').classList.remove('recording'); showVideoRecordingPanel(false); }; reader.readAsDataURL(blob); }; }; }
 async function compressVideoBlob(inputBlob, targetSize, fps) { return new Promise((resolve) => { try { const url = URL.createObjectURL(inputBlob); const video = document.createElement('video'); video.src = url; video.muted = true; video.playsInline = true; video.crossOrigin = 'anonymous'; video.onloadedmetadata = async () => { try { const canvas = document.createElement('canvas'); canvas.width = targetSize; canvas.height = targetSize; const ctx = canvas.getContext('2d'); const size = Math.min(video.videoWidth, video.videoHeight); const sx = (video.videoWidth - size) / 2, sy = (video.videoHeight - size) / 2; const stream = canvas.captureStream(fps); let recorder; try { recorder = new MediaRecorder(stream, {mimeType: 'video/webm;codecs=vp8'}); } catch (e) { recorder = new MediaRecorder(stream); } const chunks = []; recorder.ondataavailable = (ev) => { if (ev.data.size > 0) chunks.push(ev.data); }; const totalFrames = Math.min(300, Math.max(20, Math.floor((video.duration || 5) * fps))); let frame = 0, ok = false; const startRec = async () => { try { await video.play(); } catch (e) {} recorder.start(); const drawFrame = () => { if (!ok) return; if (frame >= totalFrames || video.ended) { ok = false; try { recorder.stop(); } catch (e) {} return; } ctx.drawImage(video, sx, sy, size, size, 0, 0, targetSize, targetSize); frame++; if (frame < totalFrames) { video.currentTime = Math.min(video.duration || 5, frame / fps); } else { try { recorder.stop(); } catch (e) {} } }; video.addEventListener('seeked', drawFrame); drawFrame(); }; recorder.onstop = () => { ok = false; URL.revokeObjectURL(url); const result = chunks.length ? new Blob(chunks, {type: 'video/webm'}) : inputBlob; resolve(result); }; ok = true; startRec(); setTimeout(() => { if (ok) { ok = false; try { recorder.stop(); } catch (e) {} } }, 15000); } catch (e) { console.error(e); URL.revokeObjectURL(url); resolve(inputBlob); } }; video.onerror = () => { URL.revokeObjectURL(url); resolve(inputBlob); }; } catch (e) { resolve(inputBlob); } }); }
 function showVideoRecordingPanel(show, stream) { const input = q('messageInput'), attach = q('attachBtn'), micBtn = q('recordBtn'); if (show) { input.style.display = 'none'; attach.style.display = 'none'; micBtn.style.display = 'none'; const panel = document.createElement('div'); panel.id = 'videoRecordPanel'; panel.className = 'record-panel'; panel.style.justifyContent = 'space-between'; panel.innerHTML = '<div style="display:flex;align-items:center;gap:10px"><video id="liveVideo" autoplay muted playsinline style="width:36px;height:36px;border-radius:50%;object-fit:cover;background:#000;border:2px solid var(--accent);"></video><span class="record-timer" id="vRecordTimer" style="color:red">0:00</span></div><span class="cancel-record" id="cancelVRecord">Cancel</span>'; q('inputArea').insertBefore(panel, q('sendBtn')); q('liveVideo').srcObject = stream; q('cancelVRecord').addEventListener('click', () => { if (App.videoRecorder) { App.videoChunks = []; App.videoRecorder.stop(); } q('videoNoteBtn').classList.remove('recording'); showVideoRecordingPanel(false); }); App.vRecordInterval = setInterval(() => { const s = Math.floor((Date.now() - App.recordingStart) / 1000); q('vRecordTimer').textContent = Math.floor(s / 60) + ':' + (s % 60).toString().padStart(2, '0'); }, 1000); } else { input.style.display = ''; attach.style.display = ''; micBtn.style.display = ''; const panel = q('videoRecordPanel'); if (panel) panel.remove(); clearInterval(App.vRecordInterval); } }
 
@@ -973,13 +975,13 @@ app.get('/', (req, res) => { res.send(HTML_PAGE); });
 io.on('connection', (socket) => {
   socket.on('register', (data) => {
     try {
-      if (!data || !data.username || !data.password) return socket.emit('register_error', 'Username and password required');
+      if (!data || !data.username || !data.password) return socket.emit('register_error', 'Введите логин и пароль');
       const username = String(data.username).trim().toLowerCase();
       const password = String(data.password);
-      if (username.length < 3 || username.length > 30) return socket.emit('register_error', 'Username 3-30 chars');
-      if (password.length < 4) return socket.emit('register_error', 'Password min 4 chars');
-      for (const u of users.values()) if (u.username === username) return socket.emit('register_error', 'Username taken');
-      if (data.avatarBase64 && data.avatarBase64.length > MAX_AVATAR_BASE64_LEN) return socket.emit('register_error', 'Avatar too large');
+      if (username.length < 3 || username.length > 30) return socket.emit('register_error', 'Логин от 3 до 30 символов');
+      if (password.length < 4) return socket.emit('register_error', 'Пароль минимум 4 символа');
+      for (const u of users.values()) if (u.username === username) return socket.emit('register_error', 'Имя уже занято');
+      if (data.avatarBase64 && data.avatarBase64.length > MAX_AVATAR_BASE64_LEN) return socket.emit('register_error', 'Аватарка слишком большая');
       const salt = crypto.randomBytes(16).toString('hex');
       const id = uuidv4();
       const user = { id, username, passwordHash: hashPassword(password, salt), salt, avatarBase64: data.avatarBase64 || null, about: escapeHTML(data.about || ''), theme: data.theme || 'dark', socketId: null, lastSeen: Date.now() };
@@ -999,11 +1001,11 @@ io.on('connection', (socket) => {
 
   socket.on('login', (data) => {
     try {
-      if (!data || !data.username || !data.password) return socket.emit('login_error', 'Invalid credentials');
+      if (!data || !data.username || !data.password) return socket.emit('login_error', 'Неверный логин или пароль');
       const username = String(data.username).trim().toLowerCase();
       const user = Array.from(users.values()).find((u) => u.username === username);
-      if (!user) return socket.emit('login_error', 'Invalid credentials');
-      if (hashPassword(String(data.password), user.salt) !== user.passwordHash) return socket.emit('login_error', 'Invalid credentials');
+      if (!user) return socket.emit('login_error', 'Неверный логин или пароль');
+      if (hashPassword(String(data.password), user.salt) !== user.passwordHash) return socket.emit('login_error', 'Неверный логин или пароль');
       ensureGlobalChat();
       const wasOnline = onlineSockets.has(user.id) && onlineSockets.get(user.id).size > 0;
       const token = generateToken();
