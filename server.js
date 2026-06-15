@@ -16,12 +16,11 @@ app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
 const PORT = process.env.PORT || 3000;
 
-// ---------- In-memory storage ----------
 const users = new Map();
 const sessions = new Map();
-const chats = new Map(); // chatId -> { id, type: 'global'|'private'|'group', name, members, messages[], pinnedId, admins }
+const chats = new Map();
 const onlineSockets = new Map();
-const unreadCounts = new Map(); // userId -> { chatId -> count }
+const unreadCounts = new Map();
 
 let adminId = null;
 
@@ -33,7 +32,6 @@ const MAX_FILE_BASE64_LEN = 3 * 1024 * 1024;
 const MESSAGE_MAX_LEN = 1000;
 const EDIT_WINDOW_MS = 48 * 60 * 60 * 1000;
 
-// ---------- Theme presets ----------
 const THEMES = {
   dark: { name: 'Telegram Dark', bg: '#0e1621', sidebar: '#17212b', bubbleOwn: '#2b5278', bubbleOther: '#182533', accent: '#3390ec', text: '#fff', muted: '#7f8c8d', border: '#242f3d', header: '#17212b' },
   light: { name: 'Telegram Light', bg: '#ffffff', sidebar: '#f5f5f5', bubbleOwn: '#effdde', bubbleOther: '#ffffff', accent: '#3390ec', text: '#000', muted: '#707579', border: '#dfe1e5', header: '#ffffff' },
@@ -45,7 +43,6 @@ const THEMES = {
   gold: { name: 'Luxury Gold', bg: '#12100e', sidebar: '#1c1814', bubbleOwn: '#5c4b1e', bubbleOther: '#221e18', accent: '#d4af37', text: '#f5efe0', muted: '#a89a7a', border: '#3a332a', header: '#1c1814' }
 };
 
-// ---------- Helpers ----------
 function escapeHTML(text) { return String(text == null ? '' : text).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])); }
 function hashPassword(password, salt) { return crypto.createHmac('sha256', salt).update(password).digest('hex'); }
 function generateToken() { return crypto.randomBytes(32).toString('hex'); }
@@ -57,9 +54,7 @@ function getUserPublicProfile(user) {
   return { id: user.id, username: user.username, avatar: user.avatarBase64 || null, about: user.about || '', theme: user.theme || 'dark', online, lastSeen: user.lastSeen || Date.now(), isAdmin: user.id === adminId };
 }
 
-function broadcastUsers() {
-  io.emit('users_list', Array.from(users.values()).map(getUserPublicProfile));
-}
+function broadcastUsers() { io.emit('users_list', Array.from(users.values()).map(getUserPublicProfile)); }
 
 function broadcastToUser(userId, event, payload) {
   const set = onlineSockets.get(userId);
@@ -106,16 +101,13 @@ function addSystemMessage(chatId, text) {
 function storeMessage(chat, senderId, payload) {
   const delivered = new Set();
   if (chat.type === 'global') { Array.from(onlineSockets.keys()).forEach((uid) => delivered.add(uid)); }
-  else if (chat.type === 'private') { if (onlineSockets.has(senderId)) delivered.add(senderId); if (onlineSockets.has(chat.members.values().next().value === senderId ? Array.from(chat.members)[1] : Array.from(chat.members)[0])) delivered.add(Array.from(chat.members).find((id) => id !== senderId)); }
+  else if (chat.type === 'private') { if (onlineSockets.has(senderId)) delivered.add(senderId); const other = Array.from(chat.members).find((id) => id !== senderId); if (other && onlineSockets.has(other)) delivered.add(other); }
   else if (chat.type === 'group') { chat.members.forEach((uid) => { if (onlineSockets.has(uid)) delivered.add(uid); }); }
   const msg = Object.assign({ id: uuidv4(), senderId, timestamp: Date.now(), status: delivered.size > 0 ? 'delivered' : 'sent', reactions: {}, replyTo: null, editedAt: null, deletedForAll: false }, payload);
   chat.messages.push(msg);
   trimHistory(chat.messages, chat.type === 'private' ? MAX_PRIVATE_HISTORY : (chat.type === 'group' ? MAX_GROUP_HISTORY : MAX_GLOBAL_HISTORY));
-  // Increment unread counts
   if (chat.type === 'global') {
-    for (const uid of users.keys()) {
-      if (uid !== senderId) { incUnread(uid, chat.id); }
-    }
+    for (const uid of users.keys()) { if (uid !== senderId) incUnread(uid, chat.id); }
   } else if (chat.type === 'private') {
     const other = Array.from(chat.members).find((id) => id !== senderId);
     if (other) incUnread(other, chat.id);
@@ -124,29 +116,22 @@ function storeMessage(chat, senderId, payload) {
   }
   return msg;
 }
+
 function incUnread(userId, chatId) {
   if (!unreadCounts.has(userId)) unreadCounts.set(userId, new Map());
   const m = unreadCounts.get(userId);
   m.set(chatId, (m.get(chatId) || 0) + 1);
 }
 function clearUnread(userId, chatId) {
-  if (unreadCounts.has(userId)) {
-    const m = unreadCounts.get(userId);
-    m.delete(chatId);
-  }
+  if (unreadCounts.has(userId)) { const m = unreadCounts.get(userId); m.delete(chatId); }
 }
-function getUnreadCount(userId, chatId) {
-  return unreadCounts.get(userId)?.get(chatId) || 0;
-}
+function getUnreadCount(userId, chatId) { return unreadCounts.get(userId)?.get(chatId) || 0; }
 
 function enrichMessage(msg) {
   if (msg.type === 'system') return Object.assign({}, msg);
   const sender = users.get(msg.senderId);
   const clone = Object.assign({}, msg);
   clone.sender = sender ? getUserPublicProfile(sender) : { id: msg.senderId, username: 'Unknown' };
-  if (msg.replyTo) {
-    const chat = null; // not used here; reply enriched client side via cached messages
-  }
   return clone;
 }
 
@@ -185,42 +170,27 @@ function setUserOffline(socket) {
   delete socket.data.userId;
 }
 
-function getChatName(chat, userId) {
-  if (chat.type === 'global') return 'Global Chat';
-  if (chat.type === 'group') return chat.name;
-  const other = Array.from(chat.members).find((id) => id !== userId);
-  const u = users.get(other);
-  return u ? u.username : 'Unknown';
-}
-
 function getChatListForUser(userId) {
   const list = [];
   for (const chat of chats.values()) {
     if (chat.type === 'global') {
-      list.push({ id: chat.id, type: 'global', name: 'Global Chat', avatar: null, lastMessage: chat.messages[chat.messages.length - 1] || null, unread: 0 });
+      list.push({ id: chat.id, type: 'global', name: 'Global Chat', avatar: null, lastMessage: chat.messages[chat.messages.length - 1] || null, unread: getUnreadCount(userId, chat.id) });
     } else if (chat.type === 'private') {
       if (!chat.members.has(userId)) continue;
       const other = Array.from(chat.members).find((id) => id !== userId);
       const u = users.get(other);
-      list.push({ id: chat.id, type: 'private', userId: other, name: u ? u.username : 'Unknown', avatar: u ? u.avatarBase64 : null, lastMessage: chat.messages[chat.messages.length - 1] || null, unread: 0 });
+      list.push({ id: chat.id, type: 'private', userId: other, name: u ? u.username : 'Unknown', avatar: u ? u.avatarBase64 : null, lastMessage: chat.messages[chat.messages.length - 1] || null, unread: getUnreadCount(userId, chat.id) });
     } else if (chat.type === 'group') {
       if (!chat.members.has(userId)) continue;
-      list.push({ id: chat.id, type: 'group', name: chat.name, avatar: null, lastMessage: chat.messages[chat.messages.length - 1] || null, unread: 0, membersCount: chat.members.size });
+      list.push({ id: chat.id, type: 'group', name: chat.name, avatar: null, lastMessage: chat.messages[chat.messages.length - 1] || null, unread: getUnreadCount(userId, chat.id), membersCount: chat.members.size });
     }
   }
   return list;
 }
 
-function markMessagesRead(chatId, userId) {
-  clearUnread(userId, chatId);
-}
+function markMessagesRead(chatId, userId) { clearUnread(userId, chatId); }
+function getUnreadCountsForUser(userId) { const m = unreadCounts.get(userId); return m ? Object.fromEntries(m) : {}; }
 
-function getUnreadCountsForUser(userId) {
-  const m = unreadCounts.get(userId);
-  return m ? Object.fromEntries(m) : {};
-}
-
-// ---------- Multer uploads ----------
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
 app.post('/api/avatar', upload.single('avatar'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
@@ -235,7 +205,6 @@ app.post('/api/file', upload.single('file'), (req, res) => {
   res.json({ url: dataUrl, name: req.file.originalname, size: req.file.size, mime: req.file.mimetype });
 });
 
-// ---------- HTML page ----------
 const HTML_PAGE = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -262,11 +231,11 @@ html, body { margin:0; height:100%; background: var(--bg); color: var(--text); f
 .tabs-bar { display:flex; border-bottom:1px solid var(--border); }
 .tab-btn { flex:1; background:none; border:none; color:var(--muted); padding:12px; cursor:pointer; font-size:14px; font-weight:600; transition:.2s; border-bottom:2px solid transparent; }
 .tab-btn.active { color:var(--text); border-bottom:2px solid var(--accent); }
-.auth-form input { width:100%; margin-bottom:14px; padding:12px; background: var(--bg); border:1px solid var(--border); border-radius:10px; color: var(--text); outline:none; }
+.auth-form input { width:100%; margin-bottom:14px; padding:12px; background: var(--bg); border:1px solid var(--border); border-radius:10px; color: var(--text); outline:none; display:block; }
 .auth-form input:focus { border-color: var(--accent); }
-.btn-primary { width:100%; padding:12px; background: var(--accent); border:none; border-radius:10px; color:#fff; cursor:pointer; font-weight:700; transition:.2s; }
+.btn-primary { width:100%; padding:12px; background: var(--accent); border:none; border-radius:10px; color:#fff; cursor:pointer; font-weight:700; transition:.2s; font-size:15px; }
 .btn-primary:hover { filter: brightness(1.1); }
-.btn-secondary { width:100%; padding:12px; background: transparent; border:1px solid var(--border); border-radius:10px; color: var(--text); cursor:pointer; margin-top:10px; transition:.2s; }
+.btn-secondary { width:100%; padding:12px; background: transparent; border:1px solid var(--border); border-radius:10px; color: var(--text); cursor:pointer; margin-top:10px; transition:.2s; font-size:15px; }
 .btn-secondary:hover { background: rgba(127,140,141,.12); }
 .drop-zone { border:2px dashed var(--border); border-radius:14px; padding:18px; text-align:center; cursor:pointer; margin-bottom:14px; color: var(--muted); transition:.2s; }
 .drop-zone.dragover { border-color: var(--accent); background: rgba(51,144,236,.1); }
@@ -387,7 +356,7 @@ html, body { margin:0; height:100%; background: var(--bg); color: var(--text); f
 .member-select { max-height:180px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:6px; }
 .member-option { display:flex; align-items:center; gap:8px; padding:6px; cursor:pointer; border-radius:6px; }
 .member-option:hover { background: rgba(127,140,141,.1); }
-.member-option input { width:auto; }
+.member-option input { width:auto; margin-bottom:0; }
 @media (max-width:768px) {
   #chatContainer.mobile .sidebar { width:100%; position:absolute; inset:0; z-index:10; }
   #chatContainer.mobile .chat-main { width:100%; position:absolute; inset:0; z-index:20; display:none; }
@@ -408,22 +377,26 @@ html, body { margin:0; height:100%; background: var(--bg); color: var(--text); f
         <button id="tabLogin" class="active">Вход</button>
         <button id="tabRegister">Регистрация</button>
       </div>
-      <form id="loginForm" class="auth-form">
-        <input id="loginUsername" placeholder="Имя пользователя" required autocomplete="username">
-        <input id="loginPassword" type="password" placeholder="Пароль" required autocomplete="current-password">
-        <button type="submit" class="btn-primary">Войти</button>
-      </form>
-      <form id="registerForm" class="auth-form hidden">
-        <input id="regUsername" placeholder="Имя пользователя" required autocomplete="off">
-        <input id="regPassword" type="password" placeholder="Пароль (мин. 4 символа)" required autocomplete="new-password">
-        <input id="regAbout" placeholder="О себе (необязательно)" maxlength="140">
-        <div id="regDrop" class="drop-zone">
-          <input type="file" id="regAvatar" accept="image/*" class="hidden">
-          <img id="regAvatarPreview" class="avatar-preview" alt="">
-          <span id="regDropText">Нажмите или перетащите фото сюда</span>
-        </div>
-        <button type="submit" class="btn-primary">Создать аккаунт</button>
-      </form>
+      <div id="loginFormWrap">
+        <form id="loginForm" class="auth-form">
+          <input id="loginUsername" placeholder="Имя пользователя" required autocomplete="username">
+          <input id="loginPassword" type="password" placeholder="Пароль" required autocomplete="current-password">
+          <button type="submit" class="btn-primary">Войти</button>
+        </form>
+      </div>
+      <div id="registerFormWrap" class="hidden">
+        <form id="registerForm" class="auth-form">
+          <input id="regUsername" placeholder="Имя пользователя" required autocomplete="off">
+          <input id="regPassword" type="password" placeholder="Пароль (мин. 4 символа)" required autocomplete="new-password">
+          <input id="regAbout" placeholder="О себе (необязательно)" maxlength="140">
+          <div id="regDrop" class="drop-zone">
+            <input type="file" id="regAvatar" accept="image/*" class="hidden">
+            <img id="regAvatarPreview" class="avatar-preview" alt="">
+            <span id="regDropText">Нажмите или перетащите фото сюда</span>
+          </div>
+          <button type="submit" class="btn-primary">Создать аккаунт</button>
+        </form>
+      </div>
     </div>
   </div>
   <div id="chatScreen" class="chat-screen hidden">
@@ -486,7 +459,7 @@ html, body { margin:0; height:100%; background: var(--bg); color: var(--text); f
         <span id="profileDropText">Сменить фото</span>
       </div>
       <div id="profileUsername" class="profile-name"></div>
-      <input id="profileAbout" placeholder="О себе" maxlength="140">
+      <input id="profileAbout" placeholder="О себе" maxlength="140" style="width:100%;margin-bottom:14px;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:10px;color:var(--text);outline:none;display:block;">
       <button id="saveProfile" class="btn-primary">Сохранить</button>
       <button id="logoutBtn" class="btn-secondary">Выйти</button>
     </div>
@@ -504,7 +477,7 @@ html, body { margin:0; height:100%; background: var(--bg); color: var(--text); f
     <div class="modal-body">
       <div class="group-form"><input id="groupName" placeholder="Название группы" maxlength="40"></div>
       <div id="groupMembers" class="member-select"></div>
-      <button id="createGroup" class="btn-primary">Создать группу</button>
+      <button id="createGroup" class="btn-primary" style="margin-top:12px">Создать группу</button>
     </div>
   </div>
 </div>
@@ -517,14 +490,40 @@ html, body { margin:0; height:100%; background: var(--bg); color: var(--text); f
 <script>
 const THEMES_SERVER = JSON.parse(document.getElementById('themes-data').textContent);
 const socket = io();
-const App = { token: localStorage.getItem('token'), user: null, users: [], chats: [], currentChatId: 'global', typing: {}, selectedAvatar: null, replyTo: null, editId: null, contextMsg: null, theme: localStorage.getItem('theme') || 'dark', mediaRecorder: null, recordedChunks: [], recordingStart: 0 };
+const App = {
+  token: localStorage.getItem('token'),
+  user: null,
+  users: [],
+  chats: [],
+  currentChatId: 'global',
+  typing: {},
+  selectedAvatar: null,
+  replyTo: null,
+  editId: null,
+  contextMsg: null,
+  theme: localStorage.getItem('theme') || 'dark',
+  mediaRecorder: null,
+  recordedChunks: [],
+  recordingStart: 0,
+  sidebarTab: 'chats'
+};
 const q = (id) => document.getElementById(id);
 
 function init() {
   applyTheme(App.theme);
-  bindAuthTabs(); bindForms(); bindChatEvents(); bindProfile(); bindTheme(); bindGroup(); bindContextMenu(); bindDragDrop(); bindReactionPicker();
-  checkMobile(); window.addEventListener('resize', checkMobile);
-  socket.on('connect', () => { if (App.token) socket.emit('authenticate', {token: App.token}); });
+  bindAuthTabs();
+  bindForms();
+  bindChatEvents();
+  bindProfile();
+  bindTheme();
+  bindGroup();
+  bindContextMenu();
+  bindDragDrop();
+  bindReactionPicker();
+  checkMobile();
+  window.addEventListener('resize', checkMobile);
+
+  socket.on('connect', () => { if (App.token) socket.emit('authenticate', { token: App.token }); });
   socket.on('logged_in', onLoggedIn);
   socket.on('auth_error', () => { logout(); showToast('Сессия истекла'); });
   socket.on('register_error', (m) => showToast(m));
@@ -539,48 +538,159 @@ function init() {
   socket.on('history', (data) => { if (data.chatId === App.currentChatId) renderHistory(data.messages, data.pinnedId); });
   socket.on('chat_update', (data) => handleChatUpdate(data));
   socket.on('logged_out', () => showAuth());
-  if (App.token) showChat(); else showAuth();
+  socket.on('typing', handleTyping);
+  socket.on('history_cleared', (data) => { if (data.chatId === App.currentChatId) { q('messagesArea').innerHTML = ''; q('pinnedMessage').classList.add('hidden'); } });
+  socket.on('profile_updated', (data) => { if (data.user && App.user && data.user.id === App.user.id) { App.user = Object.assign(App.user, data.user); } });
+
+  if (App.token) showChatScreen(); else showAuth();
 }
 
 function applyTheme(themeName, persist) {
   const t = THEMES_SERVER[themeName] || THEMES_SERVER.dark;
   const root = document.documentElement;
-  root.style.setProperty('--bg', t.bg); root.style.setProperty('--sidebar', t.sidebar);
-  root.style.setProperty('--bubble-own', t.bubbleOwn); root.style.setProperty('--bubble-other', t.bubbleOther);
-  root.style.setProperty('--accent', t.accent); root.style.setProperty('--text', t.text);
-  root.style.setProperty('--muted', t.muted); root.style.setProperty('--border', t.border);
+  root.style.setProperty('--bg', t.bg);
+  root.style.setProperty('--sidebar', t.sidebar);
+  root.style.setProperty('--bubble-own', t.bubbleOwn);
+  root.style.setProperty('--bubble-other', t.bubbleOther);
+  root.style.setProperty('--accent', t.accent);
+  root.style.setProperty('--text', t.text);
+  root.style.setProperty('--muted', t.muted);
+  root.style.setProperty('--border', t.border);
   root.style.setProperty('--header', t.header);
-  App.theme = themeName; if (persist) { localStorage.setItem('theme', themeName); if (App.user) socket.emit('update_profile', {theme: themeName}); }
+  App.theme = themeName;
+  if (persist) { localStorage.setItem('theme', themeName); if (App.user) socket.emit('update_profile', { theme: themeName }); }
 }
-function bindAuthTabs() { q('tabLogin').addEventListener('click', () => switchTab('login')); q('tabRegister').addEventListener('click', () => switchTab('register')); }
-function switchTab(tab) { if (tab === 'login') { q('loginForm').classList.remove('hidden'); q('registerForm').classList.add('hidden'); q('tabLogin').classList.add('active'); q('tabRegister').classList.remove('active'); } else { q('loginForm').classList.add('hidden'); q('registerForm').classList.remove('hidden'); q('tabLogin').classList.remove('active'); q('tabRegister').classList.add('active'); } }
+
+function bindAuthTabs() {
+  q('tabLogin').addEventListener('click', () => switchAuthTab('login'));
+  q('tabRegister').addEventListener('click', () => switchAuthTab('register'));
+}
+
+function switchAuthTab(tab) {
+  if (tab === 'login') {
+    q('loginFormWrap').classList.remove('hidden');
+    q('registerFormWrap').classList.add('hidden');
+    q('tabLogin').classList.add('active');
+    q('tabRegister').classList.remove('active');
+  } else {
+    q('loginFormWrap').classList.add('hidden');
+    q('registerFormWrap').classList.remove('hidden');
+    q('tabLogin').classList.remove('active');
+    q('tabRegister').classList.add('active');
+  }
+}
+
 function bindForms() {
   setupDropZone('regDrop', 'regAvatar', 'regAvatarPreview', 'regDropText', (b64) => { App.selectedAvatar = b64; }, true);
-  q('registerForm').addEventListener('submit', (e) => { e.preventDefault(); const username = q('regUsername').value.trim().toLowerCase(); const password = q('regPassword').value; if (password.length < 4) return showToast('Пароль минимум 4 символа'); socket.emit('register', {username, password, avatarBase64: App.selectedAvatar, about: q('regAbout').value, theme: App.theme}); });
-  q('loginForm').addEventListener('submit', (e) => { e.preventDefault(); socket.emit('login', {username: q('loginUsername').value.trim().toLowerCase(), password: q('loginPassword').value}); });
+
+  q('registerForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const username = q('regUsername').value.trim().toLowerCase();
+    const password = q('regPassword').value;
+    if (!username) return showToast('Введите имя пользователя');
+    if (password.length < 4) return showToast('Пароль минимум 4 символа');
+    socket.emit('register', {
+      username,
+      password,
+      avatarBase64: App.selectedAvatar || null,
+      about: q('regAbout').value,
+      theme: App.theme
+    });
+  });
+
+  q('loginForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const username = q('loginUsername').value.trim().toLowerCase();
+    const password = q('loginPassword').value;
+    if (!username || !password) return showToast('Введите логин и пароль');
+    socket.emit('login', { username, password });
+  });
 }
+
 function setupDropZone(zoneId, inputId, previewId, textId, callback, compress) {
   const zone = q(zoneId), input = q(inputId), preview = q(previewId), text = q(textId);
-  zone.addEventListener('click', () => input.click());
+  if (!zone || !input) return;
+  zone.addEventListener('click', (e) => { e.preventDefault(); input.click(); });
   zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
-  zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
-  input.addEventListener('change', () => handleFiles(input.files));
-  function handleFiles(files) { if (!files || !files[0]) return; if (!files[0].type.startsWith('image/')) return showToast('Выберите изображение'); if (compress) compressImage(files[0], (dataUrl) => { preview.src = dataUrl; preview.style.display = 'block'; if (text) text.style.display = 'none'; callback(dataUrl); }); else { const r = new FileReader(); r.onload = (e) => { preview.src = e.target.result; preview.style.display = 'block'; if (text) text.style.display = 'none'; callback(e.target.result); }; r.readAsDataURL(files[0]); } }
+  zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('dragover'); handleImgFiles(e.dataTransfer.files); });
+  input.addEventListener('change', () => handleImgFiles(input.files));
+  function handleImgFiles(files) {
+    if (!files || !files[0]) return;
+    if (!files[0].type.startsWith('image/')) return showToast('Выберите изображение');
+    if (compress) {
+      compressImage(files[0], (dataUrl) => {
+        preview.src = dataUrl;
+        preview.style.display = 'block';
+        if (text) text.style.display = 'none';
+        callback(dataUrl);
+      });
+    } else {
+      const r = new FileReader();
+      r.onload = (ev) => {
+        preview.src = ev.target.result;
+        preview.style.display = 'block';
+        if (text) text.style.display = 'none';
+        callback(ev.target.result);
+      };
+      r.readAsDataURL(files[0]);
+    }
+  }
 }
+
 function compressImage(file, callback, maxLen) {
   maxLen = maxLen || 64000;
   const reader = new FileReader();
   reader.onload = (e) => {
     const img = new Image();
-    img.onload = () => { let size = 256, quality = 0.9; function tryCompress() { const canvas = document.createElement('canvas'); canvas.width = size; canvas.height = size; const ctx = canvas.getContext('2d'); const scale = Math.max(size / img.width, size / img.height); const w = img.width * scale, h = img.height * scale; ctx.fillStyle = '#17212b'; ctx.fillRect(0, 0, size, size); ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h); const dataUrl = canvas.toDataURL('image/jpeg', quality); if (dataUrl.length > maxLen && quality > 0.3) { quality -= 0.1; tryCompress(); } else if (dataUrl.length > maxLen && size > 96) { size = Math.floor(size * 0.75); quality = 0.9; tryCompress(); } else callback(dataUrl); } tryCompress(); };
+    img.onload = () => {
+      let size = 256, quality = 0.9;
+      function tryCompress() {
+        const canvas = document.createElement('canvas');
+        canvas.width = size; canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const scale = Math.max(size / img.width, size / img.height);
+        const w = img.width * scale, h = img.height * scale;
+        ctx.fillStyle = '#17212b';
+        ctx.fillRect(0, 0, size, size);
+        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        if (dataUrl.length > maxLen && quality > 0.3) { quality -= 0.1; tryCompress(); }
+        else if (dataUrl.length > maxLen && size > 96) { size = Math.floor(size * 0.75); quality = 0.9; tryCompress(); }
+        else callback(dataUrl);
+      }
+      tryCompress();
+    };
     img.src = e.target.result;
   };
   reader.readAsDataURL(file);
 }
-function onLoggedIn(data) { App.token = data.token; App.user = data.user; localStorage.setItem('token', data.token); applyTheme(data.user.theme || App.theme, false); updateProfileUI(); showChat(); App.currentChatId = 'global'; socket.emit('get_users'); socket.emit('get_chats'); renderHeader(); }
-function showChat() { q('authScreen').classList.add('hidden'); q('chatScreen').classList.remove('hidden'); }
-function showAuth() { q('authScreen').classList.remove('hidden'); q('chatScreen').classList.add('hidden'); }
+
+function onLoggedIn(data) {
+  App.token = data.token;
+  App.user = data.user;
+  localStorage.setItem('token', data.token);
+  applyTheme(data.user.theme || App.theme, false);
+  updateProfileUI();
+  showChatScreen();
+  App.currentChatId = 'global';
+  socket.emit('get_users');
+  socket.emit('get_chats');
+  renderHeader();
+}
+
+function showChatScreen() {
+  q('authScreen').classList.add('hidden');
+  q('chatScreen').classList.remove('hidden');
+}
+
+function showAuth() {
+  q('authScreen').classList.remove('hidden');
+  q('chatScreen').classList.add('hidden');
+  switchAuthTab('login');
+}
 
 function renderHeader() {
   const chat = App.chats.find((c) => c.id === App.currentChatId);
@@ -589,6 +699,7 @@ function renderHeader() {
   const canClear = App.currentChatId === 'global' && App.user && App.user.isAdmin;
   q('clearHistoryBtn').classList.toggle('hidden', !canClear);
 }
+
 function updateChatSubtitle() {
   if (App.currentChatId === 'global') { q('chatSubtitle').textContent = App.users.length + ' users'; return; }
   const chat = App.chats.find((c) => c.id === App.currentChatId);
@@ -596,8 +707,11 @@ function updateChatSubtitle() {
   if (chat.type === 'private') {
     const u = App.users.find((x) => x.id === chat.userId);
     q('chatSubtitle').textContent = u && u.online ? 'online' : (u ? formatLastSeen(u.lastSeen) : 'last seen recently');
-  } else if (chat.type === 'group') { q('chatSubtitle').textContent = chat.membersCount + ' members'; }
+  } else if (chat.type === 'group') {
+    q('chatSubtitle').textContent = chat.membersCount + ' members';
+  }
 }
+
 function formatLastSeen(ts) {
   const diff = Math.floor((Date.now() - ts) / 1000);
   if (diff < 60) return 'был(а) только что';
@@ -607,8 +721,8 @@ function formatLastSeen(ts) {
 }
 
 function bindChatEvents() {
-  q('tabChats').addEventListener('click', () => switchTab('chats'));
-  q('tabUsers').addEventListener('click', () => switchTab('users'));
+  q('tabChats').addEventListener('click', () => switchSidebarTab('chats'));
+  q('tabUsers').addEventListener('click', () => switchSidebarTab('users'));
   q('sendBtn').addEventListener('click', sendMessage);
   q('messageInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendMessage(); } });
   q('messageInput').addEventListener('input', onTyping);
@@ -616,46 +730,80 @@ function bindChatEvents() {
   q('backBtn').addEventListener('click', () => { q('chatContainer').classList.remove('mobile-open'); q('backBtn').classList.add('hidden'); });
   q('clearHistoryBtn').addEventListener('click', () => { if (confirm('Очистить историю общего чата?')) socket.emit('clear_history'); });
   q('attachBtn').addEventListener('click', () => q('fileInput').click());
-  q('fileInput').addEventListener('change', () => handleFileUpload(q('fileInput').files[0]));
+  q('fileInput').addEventListener('change', () => { handleFileUpload(q('fileInput').files[0]); q('fileInput').value = ''; });
   q('videoNoteBtn').addEventListener('click', toggleVideoRecording);
   q('recordBtn').addEventListener('click', toggleAudioRecording);
-  q('cancelReply').addEventListener('click', () => { App.replyTo = null; App.editId = null; q('replyBar').classList.add('hidden'); q('messageInput').placeholder = 'Write a message...'; });
-  q('unpinBtn').addEventListener('click', () => socket.emit('pin_message', {chatId: App.currentChatId, messageId: null}));
-  q('pinnedMessage').addEventListener('click', () => { const id = q('pinnedMessage').dataset.id; if (id) { const el = q('messagesArea').querySelector('[data-id="' + id + '"]'); if (el) el.scrollIntoView({behavior:'smooth', block:'center'}); } });
+  q('cancelReply').addEventListener('click', () => { App.replyTo = null; App.editId = null; q('replyBar').classList.add('hidden'); q('messageInput').placeholder = 'Введите сообщение...'; });
+  q('unpinBtn').addEventListener('click', () => socket.emit('pin_message', { chatId: App.currentChatId, messageId: null }));
+  q('pinnedMessage').addEventListener('click', (e) => {
+    if (e.target === q('unpinBtn')) return;
+    const id = q('pinnedMessage').dataset.id;
+    if (id) { const el = q('messagesArea').querySelector('[data-id="' + id + '"]'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  });
+}
+
+function switchSidebarTab(tab) {
+  App.sidebarTab = tab;
+  if (tab === 'chats') {
+    q('chatsList').classList.remove('hidden');
+    q('usersList').classList.add('hidden');
+    q('tabChats').classList.add('active');
+    q('tabUsers').classList.remove('active');
+  } else {
+    q('chatsList').classList.add('hidden');
+    q('usersList').classList.remove('hidden');
+    q('tabChats').classList.remove('active');
+    q('tabUsers').classList.add('active');
+  }
+  renderChatList();
 }
 
 function openChat(chatId) {
-  App.currentChatId = chatId; App.replyTo = null; App.editId = null; q('replyBar').classList.add('hidden');
-  q('messagesArea').innerHTML = ''; App.typing = {}; q('typingIndicator').textContent = '';
-  renderHeader(); renderChatList();
-  socket.emit('get_history', {chatId});
+  App.currentChatId = chatId;
+  App.replyTo = null;
+  App.editId = null;
+  q('replyBar').classList.add('hidden');
+  q('messagesArea').innerHTML = '';
+  App.typing = {};
+  q('typingIndicator').textContent = '';
+  renderHeader();
+  renderChatList();
+  socket.emit('get_history', { chatId });
+  socket.emit('get_chats');
   if (window.innerWidth <= 768) { q('chatContainer').classList.add('mobile-open'); q('backBtn').classList.remove('hidden'); }
 }
 
 function renderChatList() {
   const term = q('searchUsers').value.trim().toLowerCase();
-  const list = q('chatsList'); list.innerHTML = '';
-  const showChats = !q('chatsList').classList.contains('hidden');
-  if (showChats) {
-    // Render chats tab
+
+  if (App.sidebarTab === 'chats') {
+    const list = q('chatsList');
+    list.innerHTML = '';
     App.chats.forEach((chat) => {
-      if (term) { const s = (chat.name + ' ' + (chat.lastMessage && chat.lastMessage.text || '')).toLowerCase(); if (s.indexOf(term) === -1) return; }
+      if (term) {
+        const s = (chat.name + ' ' + ((chat.lastMessage && chat.lastMessage.text) || '')).toLowerCase();
+        if (s.indexOf(term) === -1) return;
+      }
       const item = document.createElement('div');
       item.className = 'user-item' + (chat.id === App.currentChatId ? ' active' : '');
       item.appendChild(getChatAvatarHTML(chat));
       const info = document.createElement('div'); info.className = 'user-info';
-      const top = document.createElement('div'); top.style.display = 'flex'; top.style.justifyContent = 'space-between';
+      const top = document.createElement('div'); top.style.cssText = 'display:flex;justify-content:space-between;align-items:center;';
       const name = document.createElement('div'); name.className = 'user-name'; name.textContent = chat.name;
-      const time = document.createElement('div'); time.style.fontSize = '11px'; time.style.color = 'var(--muted)'; time.textContent = chat.lastMessage ? formatTime(chat.lastMessage.timestamp) : '';
+      const time = document.createElement('div'); time.style.cssText = 'font-size:11px;color:var(--muted);flex-shrink:0;margin-left:6px;';
+      time.textContent = chat.lastMessage ? formatTime(chat.lastMessage.timestamp) : '';
       top.appendChild(name); top.appendChild(time);
       const last = document.createElement('div'); last.className = 'last-msg';
-      last.textContent = chat.lastMessage ? (chat.lastMessage.type === 'system' ? chat.lastMessage.text : (chat.lastMessage.sender && chat.lastMessage.sender.username ? chat.lastMessage.sender.username + ': ' : '') + previewText(chat.lastMessage)) : 'No messages';
+      last.textContent = chat.lastMessage
+        ? (chat.lastMessage.type === 'system'
+          ? chat.lastMessage.text
+          : ((chat.lastMessage.sender && chat.lastMessage.sender.username ? chat.lastMessage.sender.username + ': ' : '') + previewText(chat.lastMessage)))
+        : 'Нет сообщений';
       info.appendChild(top); info.appendChild(last);
       item.appendChild(info);
-      // unread badge
       if (chat.unread > 0) {
         const badge = document.createElement('div');
-        badge.style.cssText = 'background:var(--accent);color:#fff;border-radius:50%;font-size:11px;min-width:18px;height:18px;padding:2px 6px;margin-left:8px;display:flex;align-items:center;justify-content:center;';
+        badge.style.cssText = 'background:var(--accent);color:#fff;border-radius:50%;font-size:11px;min-width:18px;height:18px;padding:2px 5px;margin-left:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;';
         badge.textContent = chat.unread > 99 ? '99+' : chat.unread;
         item.appendChild(badge);
       }
@@ -663,9 +811,10 @@ function renderChatList() {
       list.appendChild(item);
     });
   } else {
-    // Render users tab
+    const list = q('usersList');
+    list.innerHTML = '';
     App.users.forEach((u) => {
-      if (u.id === App.user.id) return;
+      if (!App.user || u.id === App.user.id) return;
       if (term && u.username.toLowerCase().indexOf(term) === -1 && (!u.about || u.about.toLowerCase().indexOf(term) === -1)) return;
       const item = document.createElement('div');
       item.className = 'user-item';
@@ -682,7 +831,8 @@ function renderChatList() {
 }
 
 function getUserAvatarHTML(user) {
-  const div = document.createElement('div'); div.className = 'avatar avatar-48';
+  const div = document.createElement('div');
+  div.className = 'avatar avatar-48';
   div.style.backgroundColor = stringToColor(user.username);
   const initial = document.createElement('span'); initial.textContent = getInitials(user.username); div.appendChild(initial);
   if (user.avatar) { const img = document.createElement('img'); img.src = user.avatar; img.alt = ''; div.appendChild(img); }
@@ -690,41 +840,9 @@ function getUserAvatarHTML(user) {
   return div;
 }
 
-function startPrivateChat(otherUserId) {
-  const userId = App.user.id;
-  const key = getPrivateKey(userId, otherUserId);
-  // Check if chat exists in memory (server will create if not)
-  socket.emit('open_private_chat', { otherUserId }, (chat) => {
-    if (chat) {
-      // Add to local chats list if not exists
-      if (!App.chats.find((c) => c.id === chat.id)) {
-        App.chats.push(chat);
-      }
-      openChat(chat.id);
-      switchTab('chats');
-    } else {
-      showToast('Не удалось открыть чат');
-    }
-  });
-}
-
-function switchTab(tab) {
-  if (tab === 'chats') {
-    q('chatsList').classList.remove('hidden');
-    q('usersList').classList.add('hidden');
-    q('tabChats').classList.add('active');
-    q('tabUsers').classList.remove('active');
-  } else {
-    q('chatsList').classList.add('hidden');
-    q('usersList').classList.remove('hidden');
-    q('tabChats').classList.remove('active');
-    q('tabUsers').classList.add('active');
-  }
-  renderChatList();
-}
-function previewText(msg) { if (msg.deletedForAll) return 'Message deleted'; if (msg.mediaType === 'image') return '📷 Photo'; if (msg.mediaType === 'video_note') return '🎥 Video circle'; if (msg.mediaType === 'voice') return '🎤 Voice'; if (msg.mediaType === 'file') return '📎 ' + (msg.fileName || 'File'); return msg.text || ''; }
 function getChatAvatarHTML(chat) {
-  const div = document.createElement('div'); div.className = 'avatar avatar-48' + (chat.type === 'group' ? ' group-avatar' : '');
+  const div = document.createElement('div');
+  div.className = 'avatar avatar-48' + (chat.type === 'group' ? ' group-avatar' : '');
   if (chat.type === 'private') {
     const u = App.users.find((x) => x.id === chat.userId);
     div.style.backgroundColor = stringToColor(u ? u.username : 'x');
@@ -737,17 +855,48 @@ function getChatAvatarHTML(chat) {
   }
   return div;
 }
-function getInitials(name) { return (name && name[0] ? name[0].toUpperCase() : '?'); }
+
+function startPrivateChat(otherUserId) {
+  socket.emit('open_private_chat', { otherUserId }, (chat) => {
+    if (chat) {
+      if (!App.chats.find((c) => c.id === chat.id)) App.chats.unshift(chat);
+      openChat(chat.id);
+      switchSidebarTab('chats');
+    } else {
+      showToast('Не удалось открыть чат');
+    }
+  });
+}
+
+function previewText(msg) {
+  if (!msg) return '';
+  if (msg.deletedForAll) return 'Сообщение удалено';
+  if (msg.mediaType === 'image') return '📷 Фото';
+  if (msg.mediaType === 'video_note') return '🎥 Видеокружок';
+  if (msg.mediaType === 'voice') return '🎤 Голосовое';
+  if (msg.mediaType === 'file') return '📎 ' + (msg.fileName || 'Файл');
+  return msg.text || '';
+}
+
+function getInitials(name) { return name && name[0] ? name[0].toUpperCase() : '?'; }
 function stringToColor(str) { let hash = 0; for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash); const h = Math.abs(hash) % 360; return 'hsl(' + h + ', 55%, 45%)'; }
 
 function handleIncoming(chatId, msg) {
-  const chat = App.chats.find((c) => c.id === chatId);
-  if (chat) { chat.lastMessage = msg; if (chatId !== App.currentChatId) chat.unread = (chat.unread || 0) + 1; }
+  let chat = App.chats.find((c) => c.id === chatId);
+  if (!chat && chatId === 'global') {
+    chat = { id: 'global', type: 'global', name: 'Global Chat', avatar: null, lastMessage: null, unread: 0 };
+    App.chats.unshift(chat);
+  }
+  if (chat) {
+    chat.lastMessage = msg;
+    if (chatId !== App.currentChatId) chat.unread = (chat.unread || 0) + 1;
+  }
   if (chatId !== App.currentChatId) { renderChatList(); playNotification(); return; }
   if (!(msg.sender && msg.sender.id === (App.user && App.user.id)) && msg.type !== 'system') playNotification();
   appendMessage(msg);
   renderChatList();
 }
+
 function appendMessage(msg) { q('messagesArea').appendChild(createMessageEl(msg)); scrollToBottom(); }
 
 function createMessageEl(msg) {
@@ -756,49 +905,136 @@ function createMessageEl(msg) {
   const isOwn = msg.sender && msg.sender.id === (App.user && App.user.id);
   div.className = 'message-bubble ' + (isOwn ? 'message-own' : 'message-other');
   div.dataset.id = msg.id;
+
+  if (!isOwn) {
+    const senderName = document.createElement('div');
+    senderName.style.cssText = 'font-size:12px;font-weight:700;color:var(--accent);margin-bottom:3px;';
+    senderName.textContent = msg.sender ? msg.sender.username : 'Unknown';
+    div.appendChild(senderName);
+  }
+
   if (msg.replyTo) div.appendChild(createReplyPreview(msg.replyTo));
   if (msg.mediaType === 'image' && msg.fileUrl) div.appendChild(createImageAttachment(msg));
   else if (msg.mediaType === 'video_note' && msg.fileUrl) div.appendChild(createVideoNoteAttachment(msg));
   else if (msg.mediaType === 'voice' && msg.fileUrl) div.appendChild(createVoiceAttachment(msg));
   else if (msg.mediaType === 'file' && msg.fileUrl) div.appendChild(createFileAttachment(msg));
-  else { const text = document.createElement('div'); text.className = 'message-text'; text.textContent = msg.deletedForAll ? 'This message was deleted' : msg.text; div.appendChild(text); }
+  else {
+    const text = document.createElement('div');
+    text.className = 'message-text';
+    text.textContent = msg.deletedForAll ? 'Сообщение удалено' : (msg.text || '');
+    div.appendChild(text);
+  }
+
   if (!msg.deletedForAll) {
     const meta = document.createElement('div'); meta.className = 'message-meta';
     const time = document.createElement('span'); time.textContent = formatTime(msg.timestamp); meta.appendChild(time);
-    if (msg.editedAt) { const ed = document.createElement('span'); ed.className = 'edited-label'; ed.textContent = 'edited'; meta.appendChild(ed); }
-    if (isOwn && (App.currentChatId.startsWith('private:') || App.chats.find((c) => c.id === App.currentChatId && c.type === 'private'))) { const status = document.createElement('span'); status.className = 'ticks ' + getStatusClass(msg.status); status.textContent = getStatusTicks(msg.status); meta.appendChild(status); }
+    if (msg.editedAt) { const ed = document.createElement('span'); ed.className = 'edited-label'; ed.textContent = 'ред.'; meta.appendChild(ed); }
+    if (isOwn) {
+      const isPrivate = App.chats.find((c) => c.id === App.currentChatId && c.type === 'private');
+      if (isPrivate) {
+        const status = document.createElement('span');
+        status.className = 'ticks ' + getStatusClass(msg.status);
+        status.textContent = getStatusTicks(msg.status);
+        meta.appendChild(status);
+      }
+    }
     div.appendChild(meta);
     div.appendChild(createReactions(msg));
   }
-  div.addEventListener('contextmenu', (e) => showContextMenu(e, msg));
-  // swipe right to reply
+
+  div.addEventListener('contextmenu', (e) => { e.preventDefault(); showContextMenu(e, msg); });
   let startX = 0;
-  div.addEventListener('touchstart', (e) => { startX = e.touches[0].clientX; }, {passive: true});
+  div.addEventListener('touchstart', (e) => { startX = e.touches[0].clientX; }, { passive: true });
   div.addEventListener('touchend', (e) => { const diff = e.changedTouches[0].clientX - startX; if (diff > 60 && !msg.deletedForAll) setReplyTo(msg); });
   return div;
 }
+
 function createReplyPreview(reply) {
   const div = document.createElement('div'); div.className = 'reply-preview';
   div.innerHTML = '<div class="reply-name">' + escapeHTML(reply.senderName || 'Unknown') + '</div><div class="reply-text">' + escapeHTML(previewText(reply)) + '</div>';
-  div.addEventListener('click', () => { const el = q('messagesArea').querySelector('[data-id="' + reply.id + '"]'); if (el) el.scrollIntoView({behavior:'smooth', block:'center'}); });
+  div.addEventListener('click', () => { const el = q('messagesArea').querySelector('[data-id="' + reply.id + '"]'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
   return div;
 }
+
 function createReactions(msg) {
   const wrap = document.createElement('div'); wrap.className = 'reactions';
   const counts = msg.reactions || {};
   Object.keys(counts).forEach((emoji) => {
-    const r = document.createElement('span'); r.className = 'reaction' + (counts[emoji].includes(App.user && App.user.id) ? ' active' : ''); r.textContent = emoji + ' ' + counts[emoji].length;
-    r.addEventListener('click', (e) => { e.stopPropagation(); socket.emit('add_reaction', {chatId: App.currentChatId, messageId: msg.id, emoji}); });
+    const arr = counts[emoji];
+    if (!arr || arr.length === 0) return;
+    const r = document.createElement('span');
+    r.className = 'reaction' + (arr.includes(App.user && App.user.id) ? ' active' : '');
+    r.textContent = emoji + ' ' + arr.length;
+    r.addEventListener('click', (e) => { e.stopPropagation(); socket.emit('add_reaction', { chatId: App.currentChatId, messageId: msg.id, emoji }); });
     wrap.appendChild(r);
   });
-  if (!msg.deletedForAll) { const add = document.createElement('span'); add.className = 'reaction-add'; add.textContent = '➕'; add.addEventListener('click', (e) => showReactionPicker(e, msg.id)); wrap.appendChild(add); }
+  if (!msg.deletedForAll) {
+    const add = document.createElement('span'); add.className = 'reaction-add'; add.textContent = '➕';
+    add.addEventListener('click', (e) => { e.stopPropagation(); showReactionPicker(e, msg.id); });
+    wrap.appendChild(add);
+  }
   return wrap;
 }
 
-function createImageAttachment(msg) { const img = document.createElement('img'); img.className = 'image-attachment'; img.src = msg.fileUrl; img.alt = ''; img.addEventListener('click', () => showMediaPreview(msg.fileUrl, 'image')); return img; }
-function createVideoNoteAttachment(msg) { const wrap = document.createElement('div'); wrap.style.cssText = 'position:relative;width:200px;height:200px'; const video = document.createElement('video'); video.className = 'video-note'; video.src = msg.fileUrl; video.muted = true; video.loop = true; video.playsInline = true; const badge = document.createElement('div'); badge.textContent = '⏵'; badge.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:32px;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.5);pointer-events:none;'; video.addEventListener('click', () => { video.muted = !video.muted; if (video.paused) { video.play(); badge.style.display = 'none'; } else { video.pause(); badge.style.display = 'flex'; } }); wrap.appendChild(video); wrap.appendChild(badge); return wrap; }
-function createVoiceAttachment(msg) { const wrap = document.createElement('div'); wrap.className = 'voice-message'; const play = document.createElement('button'); play.className = 'voice-play'; play.innerHTML = '▶'; const wave = document.createElement('div'); wave.className = 'voice-wave'; const bars = msg.waveform ? msg.waveform.split(',').map((h) => { const b = document.createElement('div'); b.className = 'voice-bar'; b.style.height = Math.max(4, parseInt(h)) + 'px'; wave.appendChild(b); return b; }) : []; const time = document.createElement('div'); time.className = 'voice-time'; time.textContent = formatDuration(msg.duration || 0); wrap.appendChild(play); wrap.appendChild(wave); wrap.appendChild(time); const audio = new Audio(msg.fileUrl); audio.addEventListener('timeupdate', () => { const p = audio.duration ? audio.currentTime / audio.duration : 0; const idx = Math.floor(p * bars.length); bars.forEach((b, i) => b.classList.toggle('active', i <= idx)); time.textContent = formatDuration(audio.duration - audio.currentTime); }); audio.addEventListener('ended', () => { play.innerHTML = '▶'; bars.forEach((b) => b.classList.remove('active')); time.textContent = formatDuration(msg.duration || 0); }); play.addEventListener('click', () => { if (audio.paused) { audio.play(); play.innerHTML = '⏸'; } else { audio.pause(); play.innerHTML = '▶'; } }); return wrap; }
-function createFileAttachment(msg) { const div = document.createElement('div'); div.className = 'file-attachment'; const icon = document.createElement('div'); icon.className = 'file-icon'; icon.textContent = '📄'; const info = document.createElement('div'); info.className = 'file-info'; const name = document.createElement('div'); name.className = 'file-name'; name.textContent = msg.fileName || 'file'; const size = document.createElement('div'); size.className = 'file-size'; size.textContent = formatBytes(msg.fileSize || 0); info.appendChild(name); info.appendChild(size); const dl = document.createElement('button'); dl.className = 'file-download'; dl.innerHTML = '⬇'; dl.addEventListener('click', () => downloadDataUrl(msg.fileUrl, msg.fileName || 'download')); div.appendChild(icon); div.appendChild(info); div.appendChild(dl); return div; }
+function createImageAttachment(msg) {
+  const img = document.createElement('img');
+  img.className = 'image-attachment';
+  img.src = msg.fileUrl; img.alt = '';
+  img.addEventListener('click', () => showMediaPreview(msg.fileUrl, 'image'));
+  return img;
+}
+
+function createVideoNoteAttachment(msg) {
+  const wrap = document.createElement('div'); wrap.style.cssText = 'position:relative;width:200px;height:200px';
+  const video = document.createElement('video');
+  video.className = 'video-note'; video.src = msg.fileUrl; video.muted = true; video.loop = true; video.playsInline = true;
+  const badge = document.createElement('div');
+  badge.textContent = '⏵';
+  badge.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:32px;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.5);pointer-events:none;';
+  video.addEventListener('click', () => {
+    video.muted = !video.muted;
+    if (video.paused) { video.play(); badge.style.display = 'none'; }
+    else { video.pause(); badge.style.display = 'flex'; }
+  });
+  wrap.appendChild(video); wrap.appendChild(badge);
+  return wrap;
+}
+
+function createVoiceAttachment(msg) {
+  const wrap = document.createElement('div'); wrap.className = 'voice-message';
+  const play = document.createElement('button'); play.className = 'voice-play'; play.innerHTML = '▶';
+  const wave = document.createElement('div'); wave.className = 'voice-wave';
+  const bars = msg.waveform ? msg.waveform.split(',').map((h) => {
+    const b = document.createElement('div'); b.className = 'voice-bar';
+    b.style.height = Math.max(4, parseInt(h)) + 'px'; wave.appendChild(b); return b;
+  }) : [];
+  const time = document.createElement('div'); time.className = 'voice-time'; time.textContent = formatDuration(msg.duration || 0);
+  wrap.appendChild(play); wrap.appendChild(wave); wrap.appendChild(time);
+  const audio = new Audio(msg.fileUrl);
+  audio.addEventListener('timeupdate', () => {
+    const p = audio.duration ? audio.currentTime / audio.duration : 0;
+    const idx = Math.floor(p * bars.length);
+    bars.forEach((b, i) => b.classList.toggle('active', i <= idx));
+    time.textContent = formatDuration(audio.duration - audio.currentTime);
+  });
+  audio.addEventListener('ended', () => { play.innerHTML = '▶'; bars.forEach((b) => b.classList.remove('active')); time.textContent = formatDuration(msg.duration || 0); });
+  play.addEventListener('click', () => { if (audio.paused) { audio.play(); play.innerHTML = '⏸'; } else { audio.pause(); play.innerHTML = '▶'; } });
+  return wrap;
+}
+
+function createFileAttachment(msg) {
+  const div = document.createElement('div'); div.className = 'file-attachment';
+  const icon = document.createElement('div'); icon.className = 'file-icon'; icon.textContent = '📄';
+  const info = document.createElement('div'); info.className = 'file-info';
+  const name = document.createElement('div'); name.className = 'file-name'; name.textContent = msg.fileName || 'file';
+  const size = document.createElement('div'); size.className = 'file-size'; size.textContent = formatBytes(msg.fileSize || 0);
+  info.appendChild(name); info.appendChild(size);
+  const dl = document.createElement('button'); dl.className = 'file-download'; dl.innerHTML = '⬇';
+  dl.addEventListener('click', () => downloadDataUrl(msg.fileUrl, msg.fileName || 'download'));
+  div.appendChild(icon); div.appendChild(info); div.appendChild(dl);
+  return div;
+}
+
 function getStatusClass(s) { if (s === 'read') return 'ticks-read'; if (s === 'delivered') return 'ticks-delivered'; return 'ticks-sent'; }
 function getStatusTicks(s) { return s === 'sent' ? '✓' : '✓✓'; }
 
@@ -807,17 +1043,16 @@ function handleChatUpdate(data) {
     const chat = App.chats.find((c) => c.id === data.chatId);
     if (chat && data.lastMessage) chat.lastMessage = data.lastMessage;
     renderChatList();
-    if (data.chatId === App.currentChatId) {
+    if (data.chatId === App.currentChatId && data.messageId) {
       const bubble = q('messagesArea').querySelector('[data-id="' + data.messageId + '"]');
-      if (bubble) {
-        const area = q('messagesArea'); const idx = Array.from(area.children).indexOf(bubble);
-        const newEl = createMessageEl(data.message || data);
-        area.replaceChild(newEl, bubble);
+      if (bubble && data.message) {
+        const newEl = createMessageEl(data.message);
+        q('messagesArea').replaceChild(newEl, bubble);
       }
     }
   } else if (data.type === 'pinned_changed') {
     if (data.chatId === App.currentChatId) showPinned(data.pinnedId, data.pinnedText);
-  } else if (data.type === 'chat_created') {
+  } else if (data.type === 'chat_created' || data.type === 'last_message') {
     socket.emit('get_chats');
   }
 }
@@ -828,121 +1063,431 @@ function renderHistory(messages, pinnedId) {
   if (pinnedId) {
     const pinned = messages.find((m) => m.id === pinnedId);
     if (pinned) showPinned(pinnedId, previewText(pinned));
+    else q('pinnedMessage').classList.add('hidden');
   } else { q('pinnedMessage').classList.add('hidden'); }
   scrollToBottom();
 }
-function showPinned(id, text) { q('pinnedMessage').dataset.id = id; q('pinnedText').textContent = text || ''; q('pinnedMessage').classList.remove('hidden'); }
+
+function showPinned(id, text) {
+  if (!id) { q('pinnedMessage').classList.add('hidden'); return; }
+  q('pinnedMessage').dataset.id = id;
+  q('pinnedText').textContent = text || '';
+  q('pinnedMessage').classList.remove('hidden');
+}
 
 function sendMessage() {
   const input = q('messageInput');
   let text = input.value.trim();
-  if (App.editId) { socket.emit('edit_message', {chatId: App.currentChatId, messageId: App.editId, text}); input.value = ''; App.editId = null; q('replyBar').classList.add('hidden'); return; }
-  if (!text) return; if (text.length > 1000) text = text.slice(0, 1000);
-  const payload = { text, mediaType: 'text', replyTo: App.replyTo ? { id: App.replyTo.id, senderName: App.replyTo.sender ? App.replyTo.sender.username : 'Unknown', text: previewText(App.replyTo) } : null };
-  socket.emit('send_message', Object.assign({}, payload, {chatId: App.currentChatId}));
-  input.value = ''; App.replyTo = null; App.editId = null; q('replyBar').classList.add('hidden'); q('messageInput').placeholder = 'Write a message...';
+  if (App.editId) {
+    if (!text) return;
+    socket.emit('edit_message', { chatId: App.currentChatId, messageId: App.editId, text });
+    input.value = ''; App.editId = null; q('replyBar').classList.add('hidden');
+    q('messageInput').placeholder = 'Введите сообщение...';
+    return;
+  }
+  if (!text) return;
+  if (text.length > 1000) text = text.slice(0, 1000);
+  const payload = {
+    chatId: App.currentChatId,
+    text,
+    mediaType: 'text',
+    replyTo: App.replyTo ? { id: App.replyTo.id, senderName: App.replyTo.sender ? App.replyTo.sender.username : 'Unknown', text: previewText(App.replyTo) } : null
+  };
+  socket.emit('send_message', payload);
+  input.value = '';
+  App.replyTo = null; App.editId = null;
+  q('replyBar').classList.add('hidden');
+  q('messageInput').placeholder = 'Введите сообщение...';
   stopTyping();
 }
 
-function setReplyTo(msg) { App.replyTo = msg; App.editId = null; q('replyBarText').textContent = 'Reply to ' + (msg.sender ? msg.sender.username : 'Unknown'); q('replyBar').classList.remove('hidden'); q('messageInput').focus(); }
-function setEditTo(msg) { App.editId = msg.id; App.replyTo = null; q('messageInput').value = msg.text || ''; q('replyBarText').textContent = 'Edit message'; q('replyBar').classList.remove('hidden'); q('messageInput').focus(); }
+function setReplyTo(msg) {
+  App.replyTo = msg; App.editId = null;
+  q('replyBarText').textContent = 'Ответ: ' + (msg.sender ? msg.sender.username : 'Unknown');
+  q('replyBar').classList.remove('hidden');
+  q('messageInput').focus();
+}
+
+function setEditTo(msg) {
+  App.editId = msg.id; App.replyTo = null;
+  q('messageInput').value = msg.text || '';
+  q('replyBarText').textContent = 'Редактирование сообщения';
+  q('replyBar').classList.remove('hidden');
+  q('messageInput').focus();
+}
 
 function handleFileUpload(file) {
-  if (!file) return; if (file.size > 2.9 * 1024 * 1024) { showToast('Файл слишком большой (макс. 3 МБ)'); return; }
+  if (!file) return;
+  if (file.size > 2.9 * 1024 * 1024) { showToast('Файл слишком большой (макс. 3 МБ)'); return; }
   const reader = new FileReader();
-  reader.onload = (e) => { const payload = { text: file.name, mediaType: file.type.startsWith('image/') ? 'image' : 'file', fileUrl: e.target.result, fileName: file.name, fileSize: file.size, mime: file.type }; sendMediaMessage(payload); };
+  reader.onload = (e) => {
+    const isImg = file.type.startsWith('image/');
+    const payload = {
+      text: file.name,
+      mediaType: isImg ? 'image' : 'file',
+      fileUrl: e.target.result,
+      fileName: file.name,
+      fileSize: file.size,
+      mime: file.type
+    };
+    sendMediaMessage(payload);
+  };
   reader.readAsDataURL(file);
 }
-function sendMediaMessage(payload) { socket.emit('send_message', Object.assign({}, payload, {chatId: App.currentChatId, replyTo: App.replyTo ? { id: App.replyTo.id, senderName: App.replyTo.sender ? App.replyTo.sender.username : 'Unknown', text: previewText(App.replyTo) } : null})); App.replyTo = null; q('replyBar').classList.add('hidden'); }
 
-async function toggleVideoRecording() { const btn = q('videoNoteBtn'); if (App.videoRecorder && App.videoRecorder.state === 'recording') { stopVideoRecording(); return; } if (App.mediaRecorder && App.mediaRecorder.state === 'recording') { showToast('Идёт запись голоса'); return; } try { const stream = await navigator.mediaDevices.getUserMedia({video: {width: 480, height: 480}, audio: true}); App.videoStream = stream; App.videoRecorder = new MediaRecorder(stream, {mimeType: 'video/webm;codecs=vp8,opus'}); App.videoChunks = []; App.recordingStart = Date.now(); App.videoRecorder.ondataavailable = (e) => { if (e.data.size > 0) App.videoChunks.push(e.data); }; App.videoRecorder.onstop = () => { processVideoRecording(); stream.getTracks().forEach((t) => t.stop()); }; App.videoRecorder.start(100); btn.classList.add('recording'); showVideoRecordingPanel(true, stream); } catch (e) { showToast('Камера недоступна'); console.error(e); } }
+function sendMediaMessage(payload) {
+  socket.emit('send_message', Object.assign({}, payload, {
+    chatId: App.currentChatId,
+    replyTo: App.replyTo ? { id: App.replyTo.id, senderName: App.replyTo.sender ? App.replyTo.sender.username : 'Unknown', text: previewText(App.replyTo) } : null
+  }));
+  App.replyTo = null;
+  q('replyBar').classList.add('hidden');
+}
+
+async function toggleVideoRecording() {
+  const btn = q('videoNoteBtn');
+  if (App.videoRecorder && App.videoRecorder.state === 'recording') { stopVideoRecording(); return; }
+  if (App.mediaRecorder && App.mediaRecorder.state === 'recording') { showToast('Идёт запись голоса'); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 480, height: 480 }, audio: true });
+    App.videoStream = stream;
+    App.videoRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8,opus' });
+    App.videoChunks = [];
+    App.recordingStart = Date.now();
+    App.videoRecorder.ondataavailable = (e) => { if (e.data.size > 0) App.videoChunks.push(e.data); };
+    App.videoRecorder.onstop = () => { processVideoRecording(); stream.getTracks().forEach((t) => t.stop()); };
+    App.videoRecorder.start(100);
+    btn.classList.add('recording');
+    showVideoRecordingPanel(true, stream);
+  } catch (e) { showToast('Камера недоступна'); console.error(e); }
+}
+
 function stopVideoRecording() { if (App.videoRecorder && App.videoRecorder.state === 'recording') App.videoRecorder.stop(); }
-async function processVideoRecording() { showToast('Обработка видеокружка...'); let blob = new Blob(App.videoChunks, {type: 'video/webm'}); const maxSize = 2.9 * 1024 * 1024; if (blob.size > maxSize) { showToast('Сжатие видео...'); const sizes = [192, 128]; for (const sz of sizes) { blob = await compressVideoBlob(blob, sz, 12); if (blob.size <= maxSize) break; } if (blob.size > maxSize) { showToast('Видео слишком большое (макс. 3 МБ)'); q('videoNoteBtn').classList.remove('recording'); showVideoRecordingPanel(false); return; } } const url = URL.createObjectURL(blob); const video = document.createElement('video'); video.src = url; video.muted = true; video.playsInline = true; video.onloadedmetadata = () => { const canvas = document.createElement('canvas'); canvas.width = 320; canvas.height = 320; const ctx = canvas.getContext('2d'); const size = Math.min(video.videoWidth, video.videoHeight); const sx = (video.videoWidth - size) / 2, sy = (video.videoHeight - size) / 2; video.currentTime = 0; video.onseeked = () => { ctx.drawImage(video, sx, sy, size, size, 0, 0, 320, 320); const reader = new FileReader(); reader.onload = (e) => { sendMediaMessage({text: 'Видеокружок', mediaType: 'video_note', fileUrl: e.target.result, fileName: 'circle.webm', fileSize: blob.size, mime: 'video/webm', duration: Math.floor(video.duration || (Date.now() - App.recordingStart)/1000)}); URL.revokeObjectURL(url); q('videoNoteBtn').classList.remove('recording'); showVideoRecordingPanel(false); }; reader.readAsDataURL(blob); }; }; }
-async function compressVideoBlob(inputBlob, targetSize, fps) { return new Promise((resolve) => { try { const url = URL.createObjectURL(inputBlob); const video = document.createElement('video'); video.src = url; video.muted = true; video.playsInline = true; video.crossOrigin = 'anonymous'; video.onloadedmetadata = async () => { try { const canvas = document.createElement('canvas'); canvas.width = targetSize; canvas.height = targetSize; const ctx = canvas.getContext('2d'); const size = Math.min(video.videoWidth, video.videoHeight); const sx = (video.videoWidth - size) / 2, sy = (video.videoHeight - size) / 2; const stream = canvas.captureStream(fps); let recorder; try { recorder = new MediaRecorder(stream, {mimeType: 'video/webm;codecs=vp8'}); } catch (e) { recorder = new MediaRecorder(stream); } const chunks = []; recorder.ondataavailable = (ev) => { if (ev.data.size > 0) chunks.push(ev.data); }; const totalFrames = Math.min(300, Math.max(20, Math.floor((video.duration || 5) * fps))); let frame = 0, ok = false; const startRec = async () => { try { await video.play(); } catch (e) {} recorder.start(); const drawFrame = () => { if (!ok) return; if (frame >= totalFrames || video.ended) { ok = false; try { recorder.stop(); } catch (e) {} return; } ctx.drawImage(video, sx, sy, size, size, 0, 0, targetSize, targetSize); frame++; if (frame < totalFrames) { video.currentTime = Math.min(video.duration || 5, frame / fps); } else { try { recorder.stop(); } catch (e) {} } }; video.addEventListener('seeked', drawFrame); drawFrame(); }; recorder.onstop = () => { ok = false; URL.revokeObjectURL(url); const result = chunks.length ? new Blob(chunks, {type: 'video/webm'}) : inputBlob; resolve(result); }; ok = true; startRec(); setTimeout(() => { if (ok) { ok = false; try { recorder.stop(); } catch (e) {} } }, 15000); } catch (e) { console.error(e); URL.revokeObjectURL(url); resolve(inputBlob); } }; video.onerror = () => { URL.revokeObjectURL(url); resolve(inputBlob); }; } catch (e) { resolve(inputBlob); } }); }
-function showVideoRecordingPanel(show, stream) { const input = q('messageInput'), attach = q('attachBtn'), micBtn = q('recordBtn'); if (show) { input.style.display = 'none'; attach.style.display = 'none'; micBtn.style.display = 'none'; const panel = document.createElement('div'); panel.id = 'videoRecordPanel'; panel.className = 'record-panel'; panel.style.justifyContent = 'space-between'; panel.innerHTML = '<div style="display:flex;align-items:center;gap:10px"><video id="liveVideo" autoplay muted playsinline style="width:36px;height:36px;border-radius:50%;object-fit:cover;background:#000;border:2px solid var(--accent);"></video><span class="record-timer" id="vRecordTimer" style="color:red">0:00</span></div><span class="cancel-record" id="cancelVRecord">Cancel</span>'; q('inputArea').insertBefore(panel, q('sendBtn')); q('liveVideo').srcObject = stream; q('cancelVRecord').addEventListener('click', () => { if (App.videoRecorder) { App.videoChunks = []; App.videoRecorder.stop(); } q('videoNoteBtn').classList.remove('recording'); showVideoRecordingPanel(false); }); App.vRecordInterval = setInterval(() => { const s = Math.floor((Date.now() - App.recordingStart) / 1000); q('vRecordTimer').textContent = Math.floor(s / 60) + ':' + (s % 60).toString().padStart(2, '0'); }, 1000); } else { input.style.display = ''; attach.style.display = ''; micBtn.style.display = ''; const panel = q('videoRecordPanel'); if (panel) panel.remove(); clearInterval(App.vRecordInterval); } }
 
-async function toggleAudioRecording() { const btn = q('recordBtn'); if (App.mediaRecorder && App.mediaRecorder.state === 'recording') { stopAudioRecording(); return; } if (App.videoRecorder && App.videoRecorder.state === 'recording') { showToast('Video recording in progress'); return; } try { const stream = await navigator.mediaDevices.getUserMedia({audio: true}); App.mediaRecorder = new MediaRecorder(stream); App.recordedChunks = []; App.recordingStart = Date.now(); App.mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) App.recordedChunks.push(e.data); }; App.mediaRecorder.onstop = () => { processAudioRecording(); stream.getTracks().forEach((t) => t.stop()); }; App.mediaRecorder.start(100); btn.classList.add('recording'); showAudioRecordingPanel(true); } catch (e) { showToast('Microphone access denied'); } }
+async function processVideoRecording() {
+  showToast('Обработка видеокружка...');
+  let blob = new Blob(App.videoChunks, { type: 'video/webm' });
+  const maxSize = 2.9 * 1024 * 1024;
+  if (blob.size > maxSize) {
+    showToast('Сжатие видео...');
+    const sizes = [192, 128];
+    for (const sz of sizes) { blob = await compressVideoBlob(blob, sz, 12); if (blob.size <= maxSize) break; }
+    if (blob.size > maxSize) { showToast('Видео слишком большое (макс. 3 МБ)'); q('videoNoteBtn').classList.remove('recording'); showVideoRecordingPanel(false); return; }
+  }
+  const url = URL.createObjectURL(blob);
+  const video = document.createElement('video');
+  video.src = url; video.muted = true; video.playsInline = true;
+  video.onloadedmetadata = () => {
+    video.currentTime = 0;
+    video.onseeked = () => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        sendMediaMessage({ text: 'Видеокружок', mediaType: 'video_note', fileUrl: e.target.result, fileName: 'circle.webm', fileSize: blob.size, mime: 'video/webm', duration: Math.floor(video.duration || (Date.now() - App.recordingStart) / 1000) });
+        URL.revokeObjectURL(url);
+        q('videoNoteBtn').classList.remove('recording');
+        showVideoRecordingPanel(false);
+      };
+      reader.readAsDataURL(blob);
+    };
+  };
+}
+
+async function compressVideoBlob(inputBlob, targetSize, fps) {
+  return new Promise((resolve) => {
+    try {
+      const url = URL.createObjectURL(inputBlob);
+      const video = document.createElement('video');
+      video.src = url; video.muted = true; video.playsInline = true; video.crossOrigin = 'anonymous';
+      video.onloadedmetadata = async () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = targetSize; canvas.height = targetSize;
+          const ctx = canvas.getContext('2d');
+          const size = Math.min(video.videoWidth, video.videoHeight);
+          const sx = (video.videoWidth - size) / 2, sy = (video.videoHeight - size) / 2;
+          const stream = canvas.captureStream(fps);
+          let recorder;
+          try { recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' }); }
+          catch (e) { recorder = new MediaRecorder(stream); }
+          const chunks = [];
+          recorder.ondataavailable = (ev) => { if (ev.data.size > 0) chunks.push(ev.data); };
+          const totalFrames = Math.min(300, Math.max(20, Math.floor((video.duration || 5) * fps)));
+          let frame = 0, ok = false;
+          recorder.onstop = () => { ok = false; URL.revokeObjectURL(url); const result = chunks.length ? new Blob(chunks, { type: 'video/webm' }) : inputBlob; resolve(result); };
+          ok = true;
+          try { await video.play(); } catch (e) {}
+          recorder.start();
+          const drawFrame = () => {
+            if (!ok) return;
+            if (frame >= totalFrames || video.ended) { ok = false; try { recorder.stop(); } catch (e) {} return; }
+            ctx.drawImage(video, sx, sy, size, size, 0, 0, targetSize, targetSize);
+            frame++;
+            if (frame < totalFrames) video.currentTime = Math.min(video.duration || 5, frame / fps);
+            else { try { recorder.stop(); } catch (e) {} }
+          };
+          video.addEventListener('seeked', drawFrame);
+          drawFrame();
+          setTimeout(() => { if (ok) { ok = false; try { recorder.stop(); } catch (e) {} } }, 15000);
+        } catch (e) { console.error(e); URL.revokeObjectURL(url); resolve(inputBlob); }
+      };
+      video.onerror = () => { URL.revokeObjectURL(url); resolve(inputBlob); };
+    } catch (e) { resolve(inputBlob); }
+  });
+}
+
+function showVideoRecordingPanel(show, stream) {
+  const input = q('messageInput'), attach = q('attachBtn'), micBtn = q('recordBtn');
+  if (show) {
+    input.style.display = 'none'; attach.style.display = 'none'; micBtn.style.display = 'none';
+    const panel = document.createElement('div'); panel.id = 'videoRecordPanel'; panel.className = 'record-panel'; panel.style.justifyContent = 'space-between';
+    panel.innerHTML = '<div style="display:flex;align-items:center;gap:10px"><video id="liveVideo" autoplay muted playsinline style="width:36px;height:36px;border-radius:50%;object-fit:cover;background:#000;border:2px solid var(--accent);"></video><span class="record-timer" id="vRecordTimer" style="color:red">0:00</span></div><span class="cancel-record" id="cancelVRecord">Отмена</span>';
+    q('inputArea').insertBefore(panel, q('sendBtn'));
+    q('liveVideo').srcObject = stream;
+    q('cancelVRecord').addEventListener('click', () => { if (App.videoRecorder) { App.videoChunks = []; App.videoRecorder.stop(); } q('videoNoteBtn').classList.remove('recording'); showVideoRecordingPanel(false); });
+    App.vRecordInterval = setInterval(() => { const s = Math.floor((Date.now() - App.recordingStart) / 1000); if (q('vRecordTimer')) q('vRecordTimer').textContent = Math.floor(s / 60) + ':' + (s % 60).toString().padStart(2, '0'); }, 1000);
+  } else {
+    input.style.display = ''; attach.style.display = ''; micBtn.style.display = '';
+    const panel = q('videoRecordPanel'); if (panel) panel.remove();
+    clearInterval(App.vRecordInterval);
+  }
+}
+
+async function toggleAudioRecording() {
+  const btn = q('recordBtn');
+  if (App.mediaRecorder && App.mediaRecorder.state === 'recording') { stopAudioRecording(); return; }
+  if (App.videoRecorder && App.videoRecorder.state === 'recording') { showToast('Идёт запись видео'); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    App.mediaRecorder = new MediaRecorder(stream);
+    App.recordedChunks = [];
+    App.recordingStart = Date.now();
+    App.mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) App.recordedChunks.push(e.data); };
+    App.mediaRecorder.onstop = () => { processAudioRecording(); stream.getTracks().forEach((t) => t.stop()); };
+    App.mediaRecorder.start(100);
+    btn.classList.add('recording');
+    showAudioRecordingPanel(true);
+  } catch (e) { showToast('Микрофон недоступен'); }
+}
+
 function stopAudioRecording() { if (App.mediaRecorder && App.mediaRecorder.state === 'recording') App.mediaRecorder.stop(); }
-async function processAudioRecording() { const blob = new Blob(App.recordedChunks, {type: 'audio/webm'}); if (blob.size > 2.9 * 1024 * 1024) { showToast('Voice too long (max 3MB)'); q('recordBtn').classList.remove('recording'); showAudioRecordingPanel(false); return; } const arrayBuffer = await blob.arrayBuffer(); const audioCtx = new (window.AudioContext || window.webkitAudioContext)(); const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer); const waveform = generateWaveform(audioBuffer); const duration = Math.floor(audioBuffer.duration); const reader = new FileReader(); reader.onload = (e) => { sendMediaMessage({text: 'Voice message', mediaType: 'voice', fileUrl: e.target.result, fileName: 'voice.webm', fileSize: blob.size, mime: 'audio/webm', duration, waveform}); q('recordBtn').classList.remove('recording'); showAudioRecordingPanel(false); }; reader.readAsDataURL(blob); }
-function generateWaveform(audioBuffer) { const data = audioBuffer.getChannelData(0); const step = Math.floor(data.length / 30); let out = []; for (let i = 0; i < 30; i++) { let sum = 0; for (let j = 0; j < step; j++) sum += Math.abs(data[i * step + j]); out.push(Math.min(28, Math.max(4, Math.floor(sum / step * 80)))); } return out.join(','); }
-function showAudioRecordingPanel(show) { const input = q('messageInput'), attach = q('attachBtn'), vn = q('videoNoteBtn'); if (show) { input.style.display = 'none'; attach.style.display = 'none'; vn.style.display = 'none'; const panel = document.createElement('div'); panel.id = 'recordPanel'; panel.className = 'record-panel'; panel.innerHTML = '<span class="record-timer" id="recordTimer">0:00</span><span class="cancel-record" id="cancelRecord">Cancel</span>'; q('inputArea').insertBefore(panel, q('sendBtn')); q('cancelRecord').addEventListener('click', () => { if (App.mediaRecorder) { App.recordedChunks = []; App.mediaRecorder.stop(); } q('recordBtn').classList.remove('recording'); showAudioRecordingPanel(false); }); App.recordInterval = setInterval(() => { const s = Math.floor((Date.now() - App.recordingStart) / 1000); q('recordTimer').textContent = Math.floor(s / 60) + ':' + (s % 60).toString().padStart(2, '0'); }, 1000); } else { input.style.display = ''; attach.style.display = ''; vn.style.display = ''; const panel = q('recordPanel'); if (panel) panel.remove(); clearInterval(App.recordInterval); } }
+
+async function processAudioRecording() {
+  const blob = new Blob(App.recordedChunks, { type: 'audio/webm' });
+  if (blob.size > 2.9 * 1024 * 1024) { showToast('Голосовое слишком длинное (макс. 3 МБ)'); q('recordBtn').classList.remove('recording'); showAudioRecordingPanel(false); return; }
+  try {
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    const waveform = generateWaveform(audioBuffer);
+    const duration = Math.floor(audioBuffer.duration);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      sendMediaMessage({ text: 'Голосовое сообщение', mediaType: 'voice', fileUrl: e.target.result, fileName: 'voice.webm', fileSize: blob.size, mime: 'audio/webm', duration, waveform });
+      q('recordBtn').classList.remove('recording');
+      showAudioRecordingPanel(false);
+    };
+    reader.readAsDataURL(blob);
+  } catch (e) {
+    console.error(e);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      sendMediaMessage({ text: 'Голосовое сообщение', mediaType: 'voice', fileUrl: ev.target.result, fileName: 'voice.webm', fileSize: blob.size, mime: 'audio/webm', duration: Math.floor((Date.now() - App.recordingStart) / 1000), waveform: '' });
+      q('recordBtn').classList.remove('recording');
+      showAudioRecordingPanel(false);
+    };
+    reader.readAsDataURL(blob);
+  }
+}
+
+function generateWaveform(audioBuffer) {
+  const data = audioBuffer.getChannelData(0);
+  const step = Math.floor(data.length / 30);
+  let out = [];
+  for (let i = 0; i < 30; i++) { let sum = 0; for (let j = 0; j < step; j++) sum += Math.abs(data[i * step + j]); out.push(Math.min(28, Math.max(4, Math.floor(sum / step * 80)))); }
+  return out.join(',');
+}
+
+function showAudioRecordingPanel(show) {
+  const input = q('messageInput'), attach = q('attachBtn'), vn = q('videoNoteBtn');
+  if (show) {
+    input.style.display = 'none'; attach.style.display = 'none'; vn.style.display = 'none';
+    const panel = document.createElement('div'); panel.id = 'recordPanel'; panel.className = 'record-panel';
+    panel.innerHTML = '<span>🎤</span><span class="record-timer" id="recordTimer">0:00</span><span class="cancel-record" id="cancelRecord">Отмена</span>';
+    q('inputArea').insertBefore(panel, q('sendBtn'));
+    q('cancelRecord').addEventListener('click', () => { if (App.mediaRecorder) { App.recordedChunks = []; App.mediaRecorder.stop(); } q('recordBtn').classList.remove('recording'); showAudioRecordingPanel(false); });
+    App.recordInterval = setInterval(() => { const s = Math.floor((Date.now() - App.recordingStart) / 1000); if (q('recordTimer')) q('recordTimer').textContent = Math.floor(s / 60) + ':' + (s % 60).toString().padStart(2, '0'); }, 1000);
+  } else {
+    input.style.display = ''; attach.style.display = ''; vn.style.display = '';
+    const panel = q('recordPanel'); if (panel) panel.remove();
+    clearInterval(App.recordInterval);
+  }
+}
 
 let typingTimer = null;
-function onTyping() { if (!App.user) return; socket.emit('typing_start', {chatId: App.currentChatId}); clearTimeout(typingTimer); typingTimer = setTimeout(stopTyping, 1200); }
-function stopTyping() { socket.emit('typing_stop', {chatId: App.currentChatId}); }
-function handleTyping(data) { if (data.chatId === App.currentChatId) App.typing = data.active ? data : null; updateTypingIndicator(); }
-function updateTypingIndicator() { q('typingIndicator').textContent = App.typing ? App.typing.username + ' is typing...' : ''; }
+function onTyping() {
+  if (!App.user) return;
+  socket.emit('typing_start', { chatId: App.currentChatId });
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(stopTyping, 1200);
+}
+function stopTyping() { socket.emit('typing_stop', { chatId: App.currentChatId }); }
+function handleTyping(data) {
+  if (data.chatId !== App.currentChatId) return;
+  if (data.userId === (App.user && App.user.id)) return;
+  if (data.active) {
+    App.typing[data.userId] = data.username;
+  } else {
+    delete App.typing[data.userId];
+  }
+  updateTypingIndicator();
+}
+function updateTypingIndicator() {
+  const names = Object.values(App.typing);
+  if (names.length === 0) q('typingIndicator').textContent = '';
+  else if (names.length === 1) q('typingIndicator').textContent = names[0] + ' печатает...';
+  else q('typingIndicator').textContent = names.join(', ') + ' печатают...';
+}
 
 function bindProfile() {
   setupDropZone('profileDrop', 'profileAvatar', 'profileAvatarPreview', 'profileDropText', (b64) => { App.selectedAvatar = b64; }, true);
   q('profileBtn').addEventListener('click', () => { updateProfileUI(); q('profileModal').classList.remove('hidden'); });
   document.querySelectorAll('.modal-close').forEach((b) => b.addEventListener('click', () => q(b.dataset.modal).classList.add('hidden')));
-  q('saveProfile').addEventListener('click', () => { socket.emit('update_profile', {about: q('profileAbout').value, avatarBase64: App.selectedAvatar}); q('profileModal').classList.add('hidden'); });
+  document.querySelectorAll('.modal').forEach((m) => m.addEventListener('click', (e) => { if (e.target === m) m.classList.add('hidden'); }));
+  q('saveProfile').addEventListener('click', () => {
+    const updateData = { about: q('profileAbout').value };
+    if (App.selectedAvatar) updateData.avatarBase64 = App.selectedAvatar;
+    socket.emit('update_profile', updateData);
+    App.selectedAvatar = null;
+    q('profileModal').classList.add('hidden');
+    showToast('Профиль сохранён');
+  });
   q('logoutBtn').addEventListener('click', () => { logout(); q('profileModal').classList.add('hidden'); });
 }
-function updateProfileUI() { if (!App.user) return; q('profileUsername').textContent = App.user.username; q('profileAbout').value = App.user.about || ''; if (App.user.avatar) { q('profileAvatarPreview').src = App.user.avatar; q('profileAvatarPreview').style.display = 'block'; q('profileDropText').style.display = 'none'; } }
-function logout() { socket.emit('logout'); localStorage.removeItem('token'); App.token = null; App.user = null; App.users = []; App.chats = []; App.currentChatId = 'global'; showAuth(); }
+
+function updateProfileUI() {
+  if (!App.user) return;
+  q('profileUsername').textContent = App.user.username;
+  q('profileAbout').value = App.user.about || '';
+  if (App.user.avatar) {
+    q('profileAvatarPreview').src = App.user.avatar;
+    q('profileAvatarPreview').style.display = 'block';
+    q('profileDropText').style.display = 'none';
+  } else {
+    q('profileAvatarPreview').style.display = 'none';
+    q('profileDropText').style.display = '';
+  }
+}
+
+function logout() {
+  socket.emit('logout');
+  localStorage.removeItem('token');
+  App.token = null; App.user = null; App.users = []; App.chats = [];
+  App.currentChatId = 'global'; App.selectedAvatar = null;
+  showAuth();
+}
 
 function bindTheme() {
   q('themeBtn').addEventListener('click', renderThemeGrid);
   document.querySelector('[data-modal="themeModal"]').addEventListener('click', () => q('themeModal').classList.add('hidden'));
 }
+
 function renderThemeGrid() {
   const grid = q('themeGrid'); grid.innerHTML = '';
-  const list = [{k:'dark',n:'Dark'},{k:'light',n:'Light'},{k:'midnight',n:'Midnight'},{k:'ocean',n:'Ocean'},{k:'sunset',n:'Sunset'},{k:'matrix',n:'Matrix'},{k:'pink',n:'Sakura'},{k:'gold',n:'Gold'}];
-  list.forEach((t) => { const div = document.createElement('div'); div.className = 'theme-option' + (App.theme === t.k ? ' active' : ''); div.style.background = THEMES_SERVER[t.k].accent; div.textContent = t.n; div.addEventListener('click', () => { applyTheme(t.k, true); renderThemeGrid(); }); grid.appendChild(div); });
+  const list = [
+    { k: 'dark', n: 'Dark' }, { k: 'light', n: 'Light' }, { k: 'midnight', n: 'Midnight' },
+    { k: 'ocean', n: 'Ocean' }, { k: 'sunset', n: 'Sunset' }, { k: 'matrix', n: 'Matrix' },
+    { k: 'pink', n: 'Sakura' }, { k: 'gold', n: 'Gold' }
+  ];
+  list.forEach((t) => {
+    const div = document.createElement('div');
+    div.className = 'theme-option' + (App.theme === t.k ? ' active' : '');
+    div.style.background = THEMES_SERVER[t.k].accent;
+    div.textContent = t.n;
+    div.addEventListener('click', () => { applyTheme(t.k, true); renderThemeGrid(); });
+    grid.appendChild(div);
+  });
   q('themeModal').classList.remove('hidden');
 }
 
 function bindGroup() {
   q('newGroupBtn').addEventListener('click', () => {
     const container = q('groupMembers'); container.innerHTML = '';
-    App.users.forEach((u) => { if (u.id === App.user.id) return; const label = document.createElement('label'); label.className = 'member-option'; label.innerHTML = '<input type="checkbox" value="' + u.id + '"><span>' + escapeHTML(u.username) + '</span>'; container.appendChild(label); });
+    App.users.forEach((u) => {
+      if (!App.user || u.id === App.user.id) return;
+      const label = document.createElement('label'); label.className = 'member-option';
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = u.id;
+      const span = document.createElement('span'); span.textContent = u.username;
+      label.appendChild(cb); label.appendChild(span);
+      container.appendChild(label);
+    });
     q('groupModal').classList.remove('hidden');
   });
-  q('tabChats').addEventListener('click', () => switchTab('chats'));
-  q('tabUsers').addEventListener('click', () => switchTab('users'));
   q('createGroup').addEventListener('click', () => {
     const name = q('groupName').value.trim();
-    if (!name) return showToast('Enter group name');
+    if (!name) return showToast('Введите название группы');
     const members = Array.from(q('groupMembers').querySelectorAll('input:checked')).map((i) => i.value);
-    socket.emit('create_group', {name, members});
-    q('groupModal').classList.add('hidden'); q('groupName').value = '';
+    socket.emit('create_group', { name, members });
+    q('groupModal').classList.add('hidden');
+    q('groupName').value = '';
   });
 }
 
 function bindContextMenu() {
-  document.addEventListener('click', () => { q('contextMenu').classList.add('hidden'); });
+  document.addEventListener('click', (e) => {
+    if (!q('contextMenu').contains(e.target)) q('contextMenu').classList.add('hidden');
+  });
 }
+
 function showContextMenu(e, msg) {
   App.contextMsg = msg;
   const menu = q('contextMenu'); menu.innerHTML = '';
   const isOwn = msg.sender && msg.sender.id === (App.user && App.user.id);
-  const canEdit = isOwn && msg.type !== 'system' && !msg.deletedForAll && msg.mediaType === 'text' && (Date.now() - msg.timestamp < 48 * 60 * 60 * 1000);
-  const canDelete = isOwn && !msg.deletedForAll;
-  const canPin = App.currentChatId.startsWith('group:') || App.currentChatId === 'global';
-  addMenuItem('📋 Copy text', () => { if (navigator.clipboard && msg.text) navigator.clipboard.writeText(msg.text).catch(() => {}); });
-  addMenuItem('↩️ Reply', () => setReplyTo(msg));
-  addMenuItem('➕ Reaction', () => showReactionPicker(e, msg.id));
-  if (canEdit) addMenuItem('✏️ Edit', () => setEditTo(msg));
-  if (canPin) addMenuItem('📌 Pin', () => socket.emit('pin_message', {chatId: App.currentChatId, messageId: msg.id}));
-  if (canDelete) addMenuItem('🗑 Delete', () => { if (confirm('Delete for everyone?')) socket.emit('delete_message', {chatId: App.currentChatId, messageId: msg.id}); });
+  const canEdit = isOwn && msg.type !== 'system' && !msg.deletedForAll && (!msg.mediaType || msg.mediaType === 'text') && (Date.now() - msg.timestamp < 48 * 60 * 60 * 1000);
+  const canDelete = isOwn && !msg.deletedForAll && msg.type !== 'system';
+  const isGlobalOrGroup = App.currentChatId === 'global' || App.currentChatId.startsWith('group:');
+
+  function addMenuItem(icon, text, cb) {
+    const btn = document.createElement('button');
+    btn.innerHTML = icon + ' ' + text;
+    btn.addEventListener('click', (ev) => { ev.stopPropagation(); cb(); menu.classList.add('hidden'); });
+    menu.appendChild(btn);
+  }
+
+  if (msg.text && !msg.deletedForAll) addMenuItem('📋', 'Копировать', () => { if (navigator.clipboard) navigator.clipboard.writeText(msg.text).catch(() => {}); });
+  if (!msg.deletedForAll && msg.type !== 'system') addMenuItem('↩️', 'Ответить', () => setReplyTo(msg));
+  if (!msg.deletedForAll && msg.type !== 'system') addMenuItem('➕', 'Реакция', () => showReactionPicker(e, msg.id));
+  if (canEdit) addMenuItem('✏️', 'Изменить', () => setEditTo(msg));
+  if (isGlobalOrGroup && !msg.deletedForAll && msg.type !== 'system') addMenuItem('📌', 'Закрепить', () => socket.emit('pin_message', { chatId: App.currentChatId, messageId: msg.id }));
+  if (canDelete) addMenuItem('🗑', 'Удалить', () => { if (confirm('Удалить сообщение для всех?')) socket.emit('delete_message', { chatId: App.currentChatId, messageId: msg.id }); });
+
+  if (menu.children.length === 0) return;
   menu.classList.remove('hidden');
-  menu.style.left = Math.min(e.pageX, window.innerWidth - 180) + 'px';
-  menu.style.top = Math.min(e.pageY, window.innerHeight - menu.offsetHeight - 10) + 'px';
-  function addMenuItem(text, cb) { const btn = document.createElement('button'); btn.textContent = text; btn.addEventListener('click', (ev) => { ev.stopPropagation(); cb(); menu.classList.add('hidden'); }); menu.appendChild(btn); }
+  const x = Math.min(e.pageX, window.innerWidth - 200);
+  const y = Math.min(e.pageY, window.innerHeight - menu.children.length * 44 - 10);
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
 }
+
 function bindReactionPicker() {
   const picker = q('reactionPicker');
-  picker.querySelectorAll('span').forEach((span) => span.addEventListener('click', () => { if (App.contextReactionMsgId) socket.emit('add_reaction', {chatId: App.currentChatId, messageId: App.contextReactionMsgId, emoji: span.textContent}); picker.classList.add('hidden'); }));
-  document.addEventListener('click', () => picker.classList.add('hidden'));
+  picker.querySelectorAll('span').forEach((span) => {
+    span.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (App.contextReactionMsgId) socket.emit('add_reaction', { chatId: App.currentChatId, messageId: App.contextReactionMsgId, emoji: span.textContent });
+      picker.classList.add('hidden');
+    });
+  });
+  document.addEventListener('click', (e) => { if (!picker.contains(e.target)) picker.classList.add('hidden'); });
 }
+
 function showReactionPicker(e, msgId) {
   App.contextReactionMsgId = msgId;
   const picker = q('reactionPicker');
   picker.classList.remove('hidden');
-  picker.style.left = Math.min(e.pageX, window.innerWidth - 240) + 'px';
-  picker.style.top = (e.pageY - 50) + 'px';
+  const x = Math.min(e.pageX || e.clientX, window.innerWidth - 250);
+  const y = Math.max(10, (e.pageY || e.clientY) - 60);
+  picker.style.left = x + 'px';
+  picker.style.top = y + 'px';
   e.stopPropagation();
 }
 
@@ -954,16 +1499,79 @@ function bindDragDrop() {
   window.addEventListener('drop', (e) => { e.preventDefault(); counter = 0; overlay.classList.add('hidden'); if (e.dataTransfer.files && e.dataTransfer.files[0]) handleFileUpload(e.dataTransfer.files[0]); });
 }
 
-function showMediaPreview(src, type) { const preview = q('mediaPreview'); preview.innerHTML = '<button>×</button>'; const el = type === 'image' ? document.createElement('img') : document.createElement('video'); el.src = src; if (type === 'video') { el.controls = true; el.autoplay = true; } preview.appendChild(el); preview.classList.remove('hidden'); preview.querySelector('button').addEventListener('click', () => preview.classList.add('hidden')); }
-function downloadDataUrl(dataUrl, filename) { const a = document.createElement('a'); a.href = dataUrl; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); }
-function scrollToBottom() { q('messagesArea').scrollTop = q('messagesArea').scrollHeight; }
-function formatTime(ts) { const d = new Date(ts); return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0'); }
-function formatDuration(s) { if (!isFinite(s) || s < 0) s = 0; return Math.floor(s / 60) + ':' + Math.floor(s % 60).toString().padStart(2, '0'); }
-function formatBytes(b) { if (b === 0) return '0 B'; const k = 1024; const sizes = ['B','KB','MB']; const i = Math.floor(Math.log(b) / Math.log(k)); return (b / Math.pow(k, i)).toFixed(1) + ' ' + sizes[i]; }
-function playNotification() { try { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return; const ctx = new AC(); const osc = ctx.createOscillator(); const gain = ctx.createGain(); osc.connect(gain); gain.connect(ctx.destination); osc.type = 'sine'; osc.frequency.setValueAtTime(900, ctx.currentTime); osc.frequency.exponentialRampToValueAtTime(500, ctx.currentTime + 0.1); gain.gain.setValueAtTime(0.08, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12); osc.start(); osc.stop(ctx.currentTime + 0.12); } catch (e) {} }
-function showToast(msg) { const t = q('toast'); t.textContent = msg; t.classList.remove('hidden'); setTimeout(() => t.classList.add('hidden'), 3000); }
+function showMediaPreview(src, type) {
+  const preview = q('mediaPreview'); preview.innerHTML = '<button style="position:absolute;top:20px;right:20px;background:rgba(0,0,0,.5);border:none;color:#fff;font-size:24px;width:40px;height:40px;border-radius:50%;cursor:pointer;">×</button>';
+  const el = type === 'image' ? document.createElement('img') : document.createElement('video');
+  el.src = src;
+  if (type === 'video') { el.controls = true; el.autoplay = true; }
+  preview.appendChild(el);
+  preview.classList.remove('hidden');
+  preview.querySelector('button').addEventListener('click', () => preview.classList.add('hidden'));
+  preview.addEventListener('click', (e) => { if (e.target === preview) preview.classList.add('hidden'); });
+}
+
+function downloadDataUrl(dataUrl, filename) {
+  const a = document.createElement('a'); a.href = dataUrl; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+function scrollToBottom() {
+  const area = q('messagesArea');
+  area.scrollTop = area.scrollHeight;
+}
+
+function formatTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
+}
+
+function formatDuration(s) {
+  if (!isFinite(s) || s < 0) s = 0;
+  return Math.floor(s / 60) + ':' + Math.floor(s % 60).toString().padStart(2, '0');
+}
+
+function formatBytes(b) {
+  if (b === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB'];
+  const i = Math.floor(Math.log(b) / Math.log(k));
+  return (b / Math.pow(k, i)).toFixed(1) + ' ' + sizes[i];
+}
+
+function playNotification() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(900, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(500, ctx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+    osc.start(); osc.stop(ctx.currentTime + 0.12);
+  } catch (e) {}
+}
+
+function showToast(msg) {
+  const t = q('toast');
+  t.textContent = msg;
+  t.classList.remove('hidden');
+  clearTimeout(App._toastTimer);
+  App._toastTimer = setTimeout(() => t.classList.add('hidden'), 3000);
+}
+
 function checkMobile() { q('chatContainer').classList.toggle('mobile', window.innerWidth <= 768); }
-function escapeHTML(text) { if (text == null) return ''; return String(text).replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+function escapeHTML(text) {
+  if (text == null) return '';
+  return String(text).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+}
+
+function getPrivateKey(a, b) { return [a, b].sort().join('|'); }
 
 document.addEventListener('DOMContentLoaded', init);
 </script>
@@ -979,12 +1587,20 @@ io.on('connection', (socket) => {
       const username = String(data.username).trim().toLowerCase();
       const password = String(data.password);
       if (username.length < 3 || username.length > 30) return socket.emit('register_error', 'Логин от 3 до 30 символов');
+      if (!/^[a-z0-9_]+$/.test(username)) return socket.emit('register_error', 'Только буквы, цифры и _');
       if (password.length < 4) return socket.emit('register_error', 'Пароль минимум 4 символа');
       for (const u of users.values()) if (u.username === username) return socket.emit('register_error', 'Имя уже занято');
       if (data.avatarBase64 && data.avatarBase64.length > MAX_AVATAR_BASE64_LEN) return socket.emit('register_error', 'Аватарка слишком большая');
       const salt = crypto.randomBytes(16).toString('hex');
       const id = uuidv4();
-      const user = { id, username, passwordHash: hashPassword(password, salt), salt, avatarBase64: data.avatarBase64 || null, about: escapeHTML(data.about || ''), theme: data.theme || 'dark', socketId: null, lastSeen: Date.now() };
+      const user = {
+        id, username,
+        passwordHash: hashPassword(password, salt), salt,
+        avatarBase64: data.avatarBase64 || null,
+        about: escapeHTML(String(data.about || '').slice(0, 140)),
+        theme: THEMES[data.theme] ? data.theme : 'dark',
+        lastSeen: Date.now()
+      };
       users.set(id, user);
       if (!adminId) adminId = id;
       ensureGlobalChat();
@@ -996,7 +1612,7 @@ io.on('connection', (socket) => {
       socket.emit('unread_counts', getUnreadCountsForUser(id));
       addSystemMessage('global', username + ' joined');
       broadcastUsers();
-    } catch (e) { console.error(e); socket.emit('register_error', 'Server error'); }
+    } catch (e) { console.error(e); socket.emit('register_error', 'Ошибка сервера'); }
   });
 
   socket.on('login', (data) => {
@@ -1016,7 +1632,7 @@ io.on('connection', (socket) => {
       socket.emit('unread_counts', getUnreadCountsForUser(user.id));
       broadcastUsers();
       if (!wasOnline) addSystemMessage('global', user.username + ' joined');
-    } catch (e) { console.error(e); socket.emit('login_error', 'Server error'); }
+    } catch (e) { console.error(e); socket.emit('login_error', 'Ошибка сервера'); }
   });
 
   socket.on('authenticate', (data) => {
@@ -1060,12 +1676,21 @@ io.on('connection', (socket) => {
       if (!chat) return;
       if (chat.type !== 'global' && !chat.members.has(senderId)) return;
       const mediaType = data.mediaType || 'text';
-      let text = String(data && data.text || '').trim();
+      let text = String(data.text || '').trim();
       if (mediaType === 'text' && !text) return;
       if (text.length > MESSAGE_MAX_LEN) text = text.slice(0, MESSAGE_MAX_LEN);
       if (mediaType === 'text') text = escapeHTML(text);
-      if (data.fileUrl && data.fileUrl.length > MAX_FILE_BASE64_LEN) return socket.emit('error_message', 'File too large');
-      const payload = { text, mediaType, fileUrl: data.fileUrl || null, fileName: data.fileName ? escapeHTML(String(data.fileName)) : null, fileSize: data.fileSize || 0, mime: data.mime || null, duration: data.duration || null, waveform: data.waveform || null, replyTo: data.replyTo || null };
+      if (data.fileUrl && data.fileUrl.length > MAX_FILE_BASE64_LEN) return socket.emit('error_message', 'Файл слишком большой');
+      const payload = {
+        text, mediaType,
+        fileUrl: data.fileUrl || null,
+        fileName: data.fileName ? escapeHTML(String(data.fileName)) : null,
+        fileSize: data.fileSize || 0,
+        mime: data.mime || null,
+        duration: data.duration || null,
+        waveform: data.waveform || null,
+        replyTo: data.replyTo || null
+      };
       const msg = storeMessage(chat, senderId, payload);
       broadcastChatMessage(chat, msg);
       broadcastChatUpdate(chat, 'last_message', { lastMessage: enrichMessage(msg) });
@@ -1079,8 +1704,10 @@ io.on('connection', (socket) => {
     if (!chat) return;
     const msg = chat.messages.find((m) => m.id === data.messageId);
     if (!msg || msg.senderId !== userId || msg.type === 'system' || msg.deletedForAll) return;
-    if (Date.now() - msg.timestamp > EDIT_WINDOW_MS) return socket.emit('error_message', 'Edit time expired');
-    msg.text = escapeHTML(String(data.text || '').trim().slice(0, MESSAGE_MAX_LEN));
+    if (Date.now() - msg.timestamp > EDIT_WINDOW_MS) return socket.emit('error_message', 'Время редактирования истекло');
+    const newText = String(data.text || '').trim();
+    if (!newText) return;
+    msg.text = escapeHTML(newText.slice(0, MESSAGE_MAX_LEN));
     msg.editedAt = Date.now();
     const full = enrichMessage(msg);
     broadcastChatUpdate(chat, 'message_edited', { messageId: msg.id, message: full, lastMessage: full });
@@ -1093,10 +1720,7 @@ io.on('connection', (socket) => {
     if (!chat) return;
     const msg = chat.messages.find((m) => m.id === data.messageId);
     if (!msg || msg.senderId !== userId || msg.type === 'system') return;
-    msg.deletedForAll = true;
-    msg.text = '';
-    msg.fileUrl = null;
-    msg.mediaType = 'text';
+    msg.deletedForAll = true; msg.text = ''; msg.fileUrl = null; msg.mediaType = 'text';
     const full = enrichMessage(msg);
     broadcastChatUpdate(chat, 'message_deleted', { messageId: msg.id, message: full, lastMessage: full });
   });
@@ -1125,11 +1749,11 @@ io.on('connection', (socket) => {
     if (!userId) return;
     const chat = getChat(data.chatId);
     if (!chat) return;
-    if (chat.type === 'private') return socket.emit('error_message', 'Pin only in groups/global');
-    if (chat.type === 'group' && !isGroupAdmin(chat, userId)) return socket.emit('error_message', 'Only admin can pin');
+    if (chat.type === 'private') return socket.emit('error_message', 'Закрепление только в группах/глобальном');
+    if (chat.type === 'group' && !isGroupAdmin(chat, userId)) return socket.emit('error_message', 'Только администратор может закреплять');
     const msg = data.messageId ? chat.messages.find((m) => m.id === data.messageId) : null;
     chat.pinnedId = msg ? msg.id : null;
-    broadcastChatUpdate(chat, 'pinned_changed', { pinnedId: chat.pinnedId, pinnedText: msg ? (msg.text || (msg.fileName || 'Media')) : '' });
+    broadcastChatUpdate(chat, 'pinned_changed', { pinnedId: chat.pinnedId, pinnedText: msg ? (msg.text || msg.fileName || 'Медиа') : '' });
   });
 
   socket.on('typing_start', (data) => {
@@ -1170,9 +1794,7 @@ io.on('connection', (socket) => {
     const userId = socket.data.userId;
     if (!userId) return;
     const counts = {};
-    for (const chat of chats.values()) {
-      counts[chat.id] = getUnreadCount(userId, chat.id);
-    }
+    for (const chat of chats.values()) counts[chat.id] = getUnreadCount(userId, chat.id);
     socket.emit('unread_counts', counts);
   });
 
@@ -1183,8 +1805,8 @@ io.on('connection', (socket) => {
     if (!user) return;
     if (data.about !== undefined) user.about = escapeHTML(String(data.about).slice(0, 140));
     if (data.avatarBase64 !== undefined) {
-      if (data.avatarBase64 && data.avatarBase64.length > MAX_AVATAR_BASE64_LEN) return socket.emit('profile_error', 'Avatar too large');
-      user.avatarBase64 = data.avatarBase64 || user.avatarBase64;
+      if (data.avatarBase64 && data.avatarBase64.length > MAX_AVATAR_BASE64_LEN) return socket.emit('profile_error', 'Аватарка слишком большая');
+      if (data.avatarBase64) user.avatarBase64 = data.avatarBase64;
     }
     if (data.theme !== undefined && THEMES[data.theme]) user.theme = data.theme;
     broadcastUsers();
@@ -1194,37 +1816,37 @@ io.on('connection', (socket) => {
   socket.on('create_group', (data) => {
     const userId = socket.data.userId;
     if (!userId) return;
-    const creator = users.get(userId);
-    if (!creator) return;
+    if (!data.name || !String(data.name).trim()) return socket.emit('error_message', 'Введите название группы');
     const validMembers = (data.members || []).filter((id) => users.has(id) && id !== userId).slice(0, 49);
-    const chat = createGroup(data.name, userId, validMembers);
-    addSystemMessage(chat.id, 'Group "' + chat.name + '" created');
-    broadcastChatUpdate(chat, 'chat_created', {});
-    socket.emit('chats_list', getChatListForUser(userId));
+    const chat = createGroup(String(data.name).trim(), userId, validMembers);
+    addSystemMessage(chat.id, 'Группа "' + chat.name + '" создана');
+    chat.members.forEach((uid) => {
+      broadcastToUser(uid, 'chat_update', { chatId: chat.id, type: 'chat_created' });
+      const s = onlineSockets.get(uid);
+      if (s) s.forEach((sid) => { const sock = io.sockets.sockets.get(sid); if (sock) sock.emit('chats_list', getChatListForUser(uid)); });
+    });
   });
 
   socket.on('open_private_chat', (data, callback) => {
     const userId = socket.data.userId;
-    if (!userId) return;
+    if (!userId || !callback) return;
     const otherUser = users.get(data.otherUserId);
-    if (!otherUser) return;
+    if (!otherUser) return callback(null);
     const chat = ensurePrivateChat(userId, data.otherUserId);
-    const chatData = {
+    callback({
       id: chat.id,
       type: 'private',
       userId: data.otherUserId,
       name: otherUser.username,
-      avatar: otherUser.avatarBase64,
+      avatar: otherUser.avatarBase64 || null,
       lastMessage: chat.messages[chat.messages.length - 1] || null,
       unread: getUnreadCount(userId, chat.id)
-    };
-    if (callback) callback(chatData);
+    });
   });
 
   socket.on('clear_history', () => {
     const userId = socket.data.userId;
-    if (!userId) return;
-    if (userId !== adminId) return socket.emit('error_message', 'Only admin can clear history');
+    if (!userId || userId !== adminId) return socket.emit('error_message', 'Только администратор может очистить историю');
     const chat = getChat('global');
     if (chat) { chat.messages.length = 0; chat.pinnedId = null; }
     io.emit('history_cleared', { chatId: 'global' });
